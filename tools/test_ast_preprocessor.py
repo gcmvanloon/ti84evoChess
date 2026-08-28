@@ -99,11 +99,13 @@ class SelectBuildFeaturesTests(unittest.TestCase):
         source_path = Path(__file__).resolve().parent.parent / "chess_evo.py"
         source = source_path.read_text(encoding="utf-8")
 
-        graphical, _ = preprocess(
+        graphical, graphical_stats = preprocess(
             source, str(source_path), profile(piece_style="graphical")
         )
-        self.assertIn("def draw_pawn", graphical)
+        self.assertNotIn("def draw_pawn", graphical)
+        self.assertGreaterEqual(graphical_stats.inlined_function_count, 6)
         self.assertIn("def draw_offset_fill_poly", graphical)
+        self.assertIn("ti_draw.fill_poly", graphical)
         self.assertNotIn("ti_draw.draw_text(px + 4, py, p)", graphical)
 
         glyphs, _ = preprocess(
@@ -128,6 +130,192 @@ class SelectBuildFeaturesTests(unittest.TestCase):
             and node.func.attr == "draw_text"
         ]
         self.assertEqual(len(draw_text_calls), 1)
+
+
+class InlineSingleUseFunctionsTests(unittest.TestCase):
+    def execute(self, source):
+        output, stats = preprocess(source)
+        namespace = {}
+        exec(output, namespace)
+        return output, stats, namespace
+
+    def test_inlines_generic_single_call_and_renames_colliding_locals(self):
+        output, stats, namespace = self.execute(
+            "results = []\n"
+            "def arbitrary_helper(value):\n"
+            "    temporary = value + 1\n"
+            "    results.append(temporary)\n"
+            "def caller(value):\n"
+            "    temporary = 100\n"
+            "    arbitrary_helper(value)\n"
+            "    results.append(temporary)\n"
+            "caller(4)\n"
+        )
+        self.assertEqual(namespace["results"], [5, 100])
+        self.assertEqual(stats.inlined_function_count, 1)
+        self.assertNotIn("def arbitrary_helper", output)
+
+    def test_repeats_to_a_fixed_point_for_call_chains(self):
+        output, stats, namespace = self.execute(
+            "results = []\n"
+            "def leaf(value): results.append(value)\n"
+            "def middle(value): leaf(value)\n"
+            "def outer(value): middle(value)\n"
+            "outer(7)\n"
+        )
+        self.assertEqual(namespace["results"], [7])
+        self.assertEqual(stats.inlined_function_count, 2)
+        self.assertNotIn("def leaf", output)
+        self.assertNotIn("def middle", output)
+
+    def test_ignores_shadowed_uses_of_the_same_name(self):
+        output, stats, namespace = self.execute(
+            "results = []\n"
+            "def helper(value): results.append(value)\n"
+            "def unrelated(helper): return helper\n"
+            "def caller(value): helper(value)\n"
+            "caller(3)\n"
+        )
+        self.assertEqual(namespace["results"], [3])
+        self.assertEqual(stats.inlined_function_count, 1)
+        self.assertNotIn("def helper", output)
+
+    def test_requires_one_exclusive_direct_standalone_call(self):
+        cases = {
+            "two calls": (
+                "def helper(value): results.append(value)\n"
+                "def caller(value):\n    helper(value)\n    helper(value)\n"
+            ),
+            "value reference": (
+                "def helper(value): results.append(value)\n"
+                "alias = helper\n"
+                "def caller(value): helper(value)\n"
+            ),
+            "nested expression": (
+                "def helper(value): results.append(value)\n"
+                "def caller(value): True and helper(value)\n"
+            ),
+            "recursion": "def helper(value): helper(value)\n",
+            "nested caller": (
+                "def helper(value): results.append(value)\n"
+                "def outer(value):\n"
+                "    def caller(value): helper(value)\n"
+                "    caller(value)\n"
+            ),
+        }
+        for label, definitions in cases.items():
+            with self.subTest(label=label):
+                output, stats = preprocess("results = []\n" + definitions)
+                self.assertEqual(stats.inlined_function_count, 0)
+                self.assertIn("def helper", output)
+
+    def test_requires_one_exclusive_module_binding(self):
+        cases = {
+            "duplicate definition": (
+                "def helper(value): sink.append(1)\n"
+                "def helper(value): sink.append(value)\n"
+            ),
+            "import alias": (
+                "import math as helper\n"
+                "def helper(value): sink.append(value)\n"
+            ),
+            "class binding": (
+                "class helper: pass\n"
+                "def helper(value): sink.append(value)\n"
+            ),
+        }
+        for label, definitions in cases.items():
+            with self.subTest(label=label):
+                output, stats = preprocess(
+                    "sink = []\n"
+                    + definitions
+                    + "def caller(value): helper(value)\n"
+                )
+                self.assertEqual(stats.inlined_function_count, 0)
+                self.assertIn("def helper", output)
+
+    def test_rejects_unsupported_function_shapes(self):
+        cases = {
+            "return": "def helper(value): return value\n",
+            "default": "def helper(value=1): sink.append(value)\n",
+            "decorator": "@decorate\ndef helper(value): sink.append(value)\n",
+            "parameter write": "def helper(value): value = 2\n",
+            "global": "def helper(value):\n    global changed\n    changed = value\n",
+            "nested closure": (
+                "def helper(value):\n"
+                "    def nested(): return value\n"
+                "    sink.append(nested())\n"
+            ),
+        }
+        for label, definition in cases.items():
+            with self.subTest(label=label):
+                source = (
+                    "sink = []\n"
+                    "def decorate(function): return function\n"
+                    + definition
+                    + "def caller(value): helper(value)\n"
+                )
+                output, stats = preprocess(source)
+                self.assertEqual(stats.inlined_function_count, 0)
+                self.assertIn("def helper", output)
+
+    def test_requires_matching_name_arguments_without_keywords(self):
+        cases = {
+            "different name": "helper(other)",
+            "expression": "helper(value + 1)",
+            "keyword": "helper(value=value)",
+        }
+        for label, call in cases.items():
+            with self.subTest(label=label):
+                output, stats = preprocess(
+                    "sink = []\n"
+                    "def helper(value): sink.append(value)\n"
+                    "def caller(value, other): " + call + "\n"
+                )
+                self.assertEqual(stats.inlined_function_count, 0)
+                self.assertIn("def helper", output)
+
+    def test_rejects_caller_binding_that_would_capture_a_global_read(self):
+        output, stats, namespace = self.execute(
+            "sink = []\n"
+            "shared = 5\n"
+            "def helper(value): sink.append(shared + value)\n"
+            "def caller(value):\n"
+            "    shared = 100\n"
+            "    helper(value)\n"
+            "caller(1)\n"
+        )
+        self.assertEqual(namespace["sink"], [6])
+        self.assertEqual(stats.inlined_function_count, 0)
+        self.assertIn("def helper", output)
+
+        output, stats = preprocess(
+            "sink = []\n"
+            "shared = 5\n"
+            "def helper(value): sink.append(shared + value)\n"
+            "def caller(value):\n"
+            "    import math as shared\n"
+            "    helper(value)\n"
+        )
+        self.assertEqual(stats.inlined_function_count, 0)
+        self.assertIn("def helper", output)
+
+    def test_fresh_locals_avoid_string_encoded_scope_declarations(self):
+        output, stats, namespace = self.execute(
+            "sink = []\n"
+            "_inline_0 = 99\n"
+            "def helper(value):\n"
+            "    temporary = value + 1\n"
+            "    sink.append(temporary)\n"
+            "def caller(value):\n"
+            "    global _inline_0\n"
+            "    helper(value)\n"
+            "caller(4)\n"
+        )
+        self.assertEqual(stats.inlined_function_count, 1)
+        self.assertEqual(namespace["sink"], [5])
+        self.assertEqual(namespace["_inline_0"], 99)
+        self.assertNotIn("def helper", output)
 
 
 class InlineConstantsTests(unittest.TestCase):

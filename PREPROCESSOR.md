@@ -7,6 +7,7 @@ keeping `chess_evo.py` readable. The build order is:
 chess_evo.py
   -> SelectBuildFeaturesPass
   -> InlineConstantsPass
+  -> InlineSingleUseFunctionsPass
   -> python-minifier
   -> chess_evo_min.py
 ```
@@ -30,6 +31,9 @@ Pass order matters. Feature selection runs first so disabled code never reaches
 constant inlining or `python-minifier`. It also allows a `const()` declaration
 inside an enabled feature branch to become a module-level declaration before
 `InlineConstantsPass` examines it.
+
+Single-use function inlining runs last. It therefore analyzes only the selected
+profile, after constant declarations and marker functions have disappeared.
 
 ### Configuration boundary
 
@@ -330,6 +334,55 @@ Use these rules when deciding whether to add `const()`:
 
 Inspect the generated form and measurements before marking a large composite.
 
+## Pass 3: `InlineSingleUseFunctionsPass`
+
+### Purpose
+
+`InlineSingleUseFunctionsPass` removes conservative module-level helper
+functions that have exactly one direct syntactic call site. It copies the
+function body into that call statement and removes the definition. Candidate
+discovery is based entirely on AST bindings and uses; function names are never
+configured or hard-coded.
+
+The pass repeats analysis after every successful transformation. This lets a
+chain such as `outer -> middle -> leaf` collapse from the leaves inward when
+each function independently satisfies the rules.
+
+### Safety rules
+
+Inlining is performed only when all of these conditions hold:
+
+- the candidate is a synchronous module-level function;
+- its module binding has exactly one use, which is one direct call;
+- the call is a standalone expression statement inside another synchronous
+  module-level function (nested scopes and methods are not rewritten);
+- every argument is positional, is a simple name, and has exactly the same
+  name and position as its corresponding parameter;
+- parameters have no defaults or annotations, and the function has no
+  decorators, return annotation, positional-only, keyword-only, variadic, or
+  keyword parameters;
+- the function never reassigns or deletes a parameter;
+- the body has no return, yield, recursion, closure, nested function or class,
+  async operation, `global`, `nonlocal`, import, comprehension, `try`, or
+  pattern-matching construct; and
+- a global read in the callee cannot be captured by a local binding in the
+  caller after inlining.
+
+Any function reference other than the one supported call—including aliases,
+callbacks, decorators, or container storage—makes the function ineligible.
+Calls embedded in assignments, Boolean expressions, returns, arguments, or
+other expressions are not rewritten.
+
+The pass renames every non-parameter callee local to a fresh generated name
+before splicing the body. This prevents a callee local from colliding with an
+existing caller local or with locals from another inlined function. These
+temporary names exist only in preprocessed output and remain eligible for the
+normal local renaming performed by `python-minifier`.
+
+These restrictions deliberately prefer a missed optimization over changing
+Python name resolution or call semantics. Extend the supported subset only
+with focused binding, rejection, behavior, and complete-pipeline measurements.
+
 ## Metrics and minifier interaction
 
 Every preprocessing run reports:
@@ -337,6 +390,7 @@ Every preprocessing run reports:
 - constants processed;
 - reads substituted;
 - indexed reads folded; and
+- single-use functions inlined; and
 - AST nodes before and after the complete pass pipeline.
 
 The build also reports final bytes, AST nodes, and statements. AST structure is

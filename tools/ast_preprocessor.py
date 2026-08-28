@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ast
 import copy
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import tempfile
@@ -190,6 +191,42 @@ class _FunctionBindings(ast.NodeVisitor):
     def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
         self.nonlocal_names.update(node.names)
 
+    def visit_Import(self, node: ast.Import) -> None:
+        for item in node.names:
+            name = item.asname or item.name.split(".")[0]
+            self.bound.add(name)
+            self.stored.add(name)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for item in node.names:
+            if item.name != "*":
+                name = item.asname or item.name
+                self.bound.add(name)
+                self.stored.add(name)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self.bound.add(node.name)
+            self.stored.add(node.name)
+        self.generic_visit(node)
+
+    def visit_MatchAs(self, node: ast.MatchAs) -> None:
+        if node.name:
+            self.bound.add(node.name)
+            self.stored.add(node.name)
+        self.generic_visit(node)
+
+    def visit_MatchStar(self, node: ast.MatchStar) -> None:
+        if node.name:
+            self.bound.add(node.name)
+            self.stored.add(node.name)
+
+    def visit_MatchMapping(self, node: ast.MatchMapping) -> None:
+        if node.rest:
+            self.bound.add(node.rest)
+            self.stored.add(node.rest)
+        self.generic_visit(node)
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.bound.add(node.name)
 
@@ -221,6 +258,34 @@ class _ClassBindings(ast.NodeVisitor):
     def visit_Name(self, node: ast.Name) -> None:
         if isinstance(node.ctx, (ast.Store, ast.Del)):
             self.bound.add(node.id)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for item in node.names:
+            self.bound.add(item.asname or item.name.split(".")[0])
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for item in node.names:
+            if item.name != "*":
+                self.bound.add(item.asname or item.name)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self.bound.add(node.name)
+        self.generic_visit(node)
+
+    def visit_MatchAs(self, node: ast.MatchAs) -> None:
+        if node.name:
+            self.bound.add(node.name)
+        self.generic_visit(node)
+
+    def visit_MatchStar(self, node: ast.MatchStar) -> None:
+        if node.name:
+            self.bound.add(node.name)
+
+    def visit_MatchMapping(self, node: ast.MatchMapping) -> None:
+        if node.rest:
+            self.bound.add(node.rest)
+        self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.bound.add(node.name)
@@ -513,6 +578,417 @@ class InlineConstantsPass:
         return tree
 
 
+class _ModuleBindings(ast.NodeVisitor):
+    """Count names bound in the module without entering child scopes."""
+
+    def __init__(self, tree: ast.Module) -> None:
+        self.counts: dict[str, int] = {}
+        self.visit(tree)
+
+    def _bind(self, name: str) -> None:
+        self.counts[name] = self.counts.get(name, 0) + 1
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self._bind(node.id)
+
+    def _visit_function_header(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> None:
+        self._bind(node.name)
+        for item in node.decorator_list:
+            self.visit(item)
+        for item in node.args.defaults:
+            self.visit(item)
+        for item in node.args.kw_defaults:
+            if item is not None:
+                self.visit(item)
+        for argument in (
+            list(node.args.posonlyargs)
+            + list(node.args.args)
+            + list(node.args.kwonlyargs)
+        ):
+            if argument.annotation:
+                self.visit(argument.annotation)
+        if node.args.vararg and node.args.vararg.annotation:
+            self.visit(node.args.vararg.annotation)
+        if node.args.kwarg and node.args.kwarg.annotation:
+            self.visit(node.args.kwarg.annotation)
+        if node.returns:
+            self.visit(node.returns)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function_header(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function_header(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._bind(node.name)
+        for item in node.decorator_list:
+            self.visit(item)
+        for item in node.bases:
+            self.visit(item)
+        for item in node.keywords:
+            self.visit(item.value)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        for item in node.args.defaults:
+            self.visit(item)
+        for item in node.args.kw_defaults:
+            if item is not None:
+                self.visit(item)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for item in node.names:
+            self._bind(item.asname or item.name.split(".")[0])
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for item in node.names:
+            if item.name != "*":
+                self._bind(item.asname or item.name)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self._bind(node.name)
+        if node.type:
+            self.visit(node.type)
+        for statement in node.body:
+            self.visit(statement)
+
+    def _visit_comprehension(self, node: ast.expr, fields: tuple[str, ...]) -> None:
+        for generator in node.generators:
+            self.visit(generator.iter)
+            for condition in generator.ifs:
+                self.visit(condition)
+        for field in fields:
+            self.visit(getattr(node, field))
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._visit_comprehension(node, ("elt",))
+
+    visit_SetComp = visit_ListComp
+    visit_GeneratorExp = visit_ListComp
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._visit_comprehension(node, ("key", "value"))
+
+
+class _ModuleFunctionUses(ast.NodeVisitor):
+    """Collect uses that resolve to selected module-level function bindings."""
+
+    def __init__(self, tree: ast.Module, names: set[str]) -> None:
+        self.names = names
+        self.uses = {name: [] for name in names}
+        self.calls = {name: [] for name in names}
+        self.local_bindings: list[tuple[set[str], set[str]]] = []
+        self.functions: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+        self.visit(tree)
+
+    def _is_shadowed(self, name: str) -> bool:
+        for bound, global_names in reversed(self.local_bindings):
+            if name in global_names:
+                return False
+            if name in bound:
+                return True
+        return False
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if node.id in self.names and not self._is_shadowed(node.id):
+            self.uses[node.id].append(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if (
+            isinstance(node.func, ast.Name)
+            and node.func.id in self.names
+            and not self._is_shadowed(node.func.id)
+        ):
+            caller = self.functions[-1] if self.functions else None
+            self.calls[node.func.id].append((node, caller))
+        self.generic_visit(node)
+
+    def _visit_function(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> None:
+        # Defaults, decorators and annotations execute in the containing scope.
+        for item in node.decorator_list:
+            self.visit(item)
+        for item in node.args.defaults:
+            self.visit(item)
+        for item in node.args.kw_defaults:
+            if item is not None:
+                self.visit(item)
+        for argument in (
+            list(node.args.posonlyargs)
+            + list(node.args.args)
+            + list(node.args.kwonlyargs)
+        ):
+            if argument.annotation:
+                self.visit(argument.annotation)
+        if node.args.vararg and node.args.vararg.annotation:
+            self.visit(node.args.vararg.annotation)
+        if node.args.kwarg and node.args.kwarg.annotation:
+            self.visit(node.args.kwarg.annotation)
+        if node.returns:
+            self.visit(node.returns)
+
+        bindings = _FunctionBindings(node)
+        self.local_bindings.append((bindings.bound, bindings.global_names))
+        self.functions.append(node)
+        for statement in node.body:
+            self.visit(statement)
+        self.functions.pop()
+        self.local_bindings.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        for item in node.args.defaults:
+            self.visit(item)
+        for item in node.args.kw_defaults:
+            if item is not None:
+                self.visit(item)
+        bindings = _FunctionBindings(node)
+        self.local_bindings.append((bindings.bound, bindings.global_names))
+        self.visit(node.body)
+        self.local_bindings.pop()
+
+    def _visit_comprehension(self, node: ast.expr, fields: tuple[str, ...]) -> None:
+        pushed = 0
+        for generator in node.generators:
+            self.visit(generator.iter)
+            self.local_bindings.append(
+                (_ConstantInliner._target_names(generator.target), set())
+            )
+            pushed += 1
+            self.visit(generator.target)
+            for condition in generator.ifs:
+                self.visit(condition)
+        for field in fields:
+            self.visit(getattr(node, field))
+        for _ in range(pushed):
+            self.local_bindings.pop()
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._visit_comprehension(node, ("elt",))
+
+    visit_SetComp = visit_ListComp
+    visit_GeneratorExp = visit_ListComp
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._visit_comprehension(node, ("key", "value"))
+
+
+class _RenameFunctionLocals(ast.NodeTransformer):
+    def __init__(self, replacements: dict[str, str]) -> None:
+        self.replacements = replacements
+
+    def visit_Name(self, node: ast.Name) -> ast.Name:
+        replacement = self.replacements.get(node.id)
+        if replacement:
+            node.id = replacement
+        return node
+
+
+class _InlineCallStatement(ast.NodeTransformer):
+    def __init__(self, target: ast.Expr, replacement: list[ast.stmt]) -> None:
+        self.target = target
+        self.replacement = replacement
+
+    def visit_Expr(self, node: ast.Expr) -> ast.Expr | list[ast.stmt]:
+        if node is self.target:
+            return self.replacement
+        return self.generic_visit(node)
+
+
+class InlineSingleUseFunctionsPass:
+    """Inline conservative module functions having one direct call site."""
+
+    name = "inline single-use functions"
+    unsupported_nodes = (
+        ast.AsyncFunctionDef,
+        ast.Await,
+        ast.ClassDef,
+        ast.DictComp,
+        ast.FunctionDef,
+        ast.GeneratorExp,
+        ast.Global,
+        ast.Import,
+        ast.ImportFrom,
+        ast.Lambda,
+        ast.ListComp,
+        ast.Match,
+        ast.Nonlocal,
+        ast.Return,
+        ast.SetComp,
+        ast.Try,
+        ast.TryStar,
+        ast.Yield,
+        ast.YieldFrom,
+    )
+
+    def __init__(self) -> None:
+        self.inlined_function_count = 0
+        self._fresh_name_index = 0
+
+    @staticmethod
+    def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
+        return {
+            child: parent
+            for parent in ast.walk(tree)
+            for child in ast.iter_child_nodes(parent)
+        }
+
+    @staticmethod
+    def _simple_parameters(node: ast.FunctionDef) -> list[str] | None:
+        arguments = node.args
+        if (
+            node.decorator_list
+            or node.returns
+            or arguments.posonlyargs
+            or arguments.kwonlyargs
+            or arguments.vararg
+            or arguments.kwarg
+            or arguments.defaults
+            or arguments.kw_defaults
+            or any(argument.annotation for argument in arguments.args)
+        ):
+            return None
+        return [argument.arg for argument in arguments.args]
+
+    @classmethod
+    def _has_unsupported_body(cls, node: ast.FunctionDef) -> bool:
+        return any(
+            isinstance(item, cls.unsupported_nodes)
+            for statement in node.body
+            for item in ast.walk(statement)
+        )
+
+    @staticmethod
+    def _parameter_is_modified(node: ast.FunctionDef, parameters: set[str]) -> bool:
+        return any(
+            isinstance(item, ast.Name)
+            and item.id in parameters
+            and isinstance(item.ctx, (ast.Store, ast.Del))
+            for statement in node.body
+            for item in ast.walk(statement)
+        )
+
+    @staticmethod
+    def _global_reads(node: ast.FunctionDef, local_names: set[str]) -> set[str]:
+        return {
+            item.id
+            for statement in node.body
+            for item in ast.walk(statement)
+            if isinstance(item, ast.Name)
+            and isinstance(item.ctx, ast.Load)
+            and item.id not in local_names
+        }
+
+    def _fresh_names(self, tree: ast.Module, names: set[str]) -> dict[str, str]:
+        used = {item.id for item in ast.walk(tree) if isinstance(item, ast.Name)}
+        used.update(
+            item.arg for item in ast.walk(tree) if isinstance(item, ast.arg)
+        )
+        for item in ast.walk(tree):
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                used.add(item.name)
+            elif isinstance(item, (ast.Global, ast.Nonlocal)):
+                used.update(item.names)
+            elif isinstance(item, ast.alias):
+                used.add(item.asname or item.name.split(".")[0])
+            elif isinstance(item, ast.ExceptHandler) and item.name:
+                used.add(item.name)
+            elif isinstance(item, (ast.MatchAs, ast.MatchStar)) and item.name:
+                used.add(item.name)
+            elif isinstance(item, ast.MatchMapping) and item.rest:
+                used.add(item.rest)
+        replacements = {}
+        for name in sorted(names):
+            while True:
+                replacement = f"_inline_{self._fresh_name_index}"
+                self._fresh_name_index += 1
+                if replacement not in used:
+                    break
+            used.add(replacement)
+            replacements[name] = replacement
+        return replacements
+
+    def _inline_one(self, tree: ast.Module) -> bool:
+        module_bindings = _ModuleBindings(tree).counts
+        definitions = {
+            node.name: node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and module_bindings.get(node.name) == 1
+        }
+        if not definitions:
+            return False
+        uses = _ModuleFunctionUses(tree, set(definitions))
+        parents = self._parents(tree)
+
+        for name, definition in definitions.items():
+            parameters = self._simple_parameters(definition)
+            if parameters is None or self._has_unsupported_body(definition):
+                continue
+            if self._parameter_is_modified(definition, set(parameters)):
+                continue
+            if len(uses.uses[name]) != 1 or len(uses.calls[name]) != 1:
+                continue
+            call, caller = uses.calls[name][0]
+            if uses.uses[name][0] is not call.func:
+                continue
+            call_statement = parents.get(call)
+            if (
+                not isinstance(call_statement, ast.Expr)
+                or call_statement.value is not call
+                or not isinstance(caller, ast.FunctionDef)
+                or caller not in tree.body
+                or caller is definition
+                or call.keywords
+                or len(call.args) != len(parameters)
+                or not all(isinstance(argument, ast.Name) for argument in call.args)
+                or [argument.id for argument in call.args] != parameters
+            ):
+                continue
+
+            callee_bindings = _FunctionBindings(definition)
+            caller_bindings = _FunctionBindings(caller)
+            if self._global_reads(definition, callee_bindings.bound).intersection(
+                caller_bindings.bound
+            ):
+                continue
+
+            local_names = callee_bindings.bound.difference(parameters)
+            replacements = self._fresh_names(tree, local_names)
+            body = copy.deepcopy(definition.body)
+            if replacements:
+                body = [_RenameFunctionLocals(replacements).visit(item) for item in body]
+
+            tree.body = [item for item in tree.body if item is not definition]
+            tree = _InlineCallStatement(call_statement, body).visit(tree)
+            self.inlined_function_count += 1
+            return True
+        return False
+
+    def run(self, tree: ast.Module) -> ast.Module:
+        while self._inline_one(tree):
+            ast.fix_missing_locations(tree)
+        return tree
+
+
+@dataclass(frozen=True)
+class PreprocessingStats:
+    constant_count: int
+    replacement_count: int
+    folded_subscript_count: int
+    inlined_function_count: int
+
+
 def source_default_profile() -> ResolvedProfile:
     features = {name: False for name in FEATURE_NAMES}
     for name in features:
@@ -526,17 +1002,23 @@ def preprocess(
     source: str,
     filename: str = "<unknown>",
     profile: ResolvedProfile | None = None,
-) -> tuple[str, InlineConstantsPass]:
+) -> tuple[str, PreprocessingStats]:
     tree = ast.parse(source, filename=filename)
     # Profile resolution is complete before this boundary. The pass consumes
     # only resolved feature Booleans and choices, then constant inlining runs
     # on the selected tree.
     features_pass = SelectBuildFeaturesPass(profile or source_default_profile())
     constants_pass = InlineConstantsPass()
-    tree = PassPipeline([features_pass, constants_pass]).run(tree)
+    functions_pass = InlineSingleUseFunctionsPass()
+    tree = PassPipeline([features_pass, constants_pass, functions_pass]).run(tree)
     output = ast.unparse(tree) + "\n"
     compile(output, filename, "exec")
-    return output, constants_pass
+    return output, PreprocessingStats(
+        constants_pass.constant_count,
+        constants_pass.replacement_count,
+        constants_pass.folded_subscript_count,
+        functions_pass.inlined_function_count,
+    )
 
 
 def write_atomic(path: Path, contents: str) -> None:
@@ -584,15 +1066,16 @@ def main() -> int:
         f"Build profile: {profile.name}; piece style: {profile.piece_style}; "
         f"enabled features: {enabled}."
     )
-    output, constants_pass = preprocess(source, str(arguments.input), profile)
+    output, stats = preprocess(source, str(arguments.input), profile)
     write_atomic(arguments.output, output)
     before_nodes = sum(1 for _ in ast.walk(ast.parse(source)))
     after_nodes = sum(1 for _ in ast.walk(ast.parse(output)))
     print(
         f"Preprocessed {arguments.input.name}: "
-        f"{constants_pass.constant_count} constants, "
-        f"{constants_pass.replacement_count} reads, "
-        f"{constants_pass.folded_subscript_count} indexed reads folded, "
+        f"{stats.constant_count} constants, "
+        f"{stats.replacement_count} reads, "
+        f"{stats.folded_subscript_count} indexed reads folded, "
+        f"{stats.inlined_function_count} functions inlined, "
         f"{before_nodes} -> {after_nodes} AST nodes."
     )
     return 0
