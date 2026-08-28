@@ -1,7 +1,99 @@
 import ast
+from pathlib import Path
 import unittest
 
 from ast_preprocessor import PreprocessorError, preprocess
+from build_profiles import FEATURE_NAMES, ResolvedProfile
+
+
+def profile(*enabled, piece_style="graphical"):
+    features = {name: name in enabled for name in FEATURE_NAMES}
+    features["debug_panel"] = any(
+        features[name] for name in features if name.startswith("debug_panel.metrics.")
+    )
+    return ResolvedProfile("test", piece_style, features)
+
+
+class SelectBuildFeaturesTests(unittest.TestCase):
+    def test_splices_enabled_body_and_disabled_else(self):
+        source = (
+            "def build_feature(name): return True\n"
+            "if build_feature('capture_panel'):\n    result = 'on'\n"
+            "else:\n    result = 'off'\n"
+        )
+        output, _ = preprocess(source, profile=profile("capture_panel"))
+        namespace = {}
+        exec(output, namespace)
+        self.assertEqual(namespace["result"], "on")
+        self.assertNotIn("build_feature", output)
+
+        output, _ = preprocess(source, profile=profile())
+        namespace = {}
+        exec(output, namespace)
+        self.assertEqual(namespace["result"], "off")
+
+    def test_selects_choice_and_removes_unused_branch(self):
+        source = (
+            "def build_choice(option, value): return value == 'graphical'\n"
+            "if build_choice('piece_style', 'graphical'):\n    result = 'graphics'\n"
+            "else:\n    result = 'glyphs'\n"
+        )
+        output, _ = preprocess(source, profile=profile(piece_style="glyphs"))
+        self.assertIn("result = 'glyphs'", output)
+        self.assertNotIn("graphics", output)
+        self.assertNotIn("build_choice", output)
+
+    def test_processes_features_before_constant_inlining(self):
+        source = (
+            "def build_feature(name): return True\n"
+            "def const(value): return value\n"
+            "if build_feature('capture_panel'):\n    VALUE = const(7)\n"
+            "result = VALUE\n"
+        )
+        output, constants_pass = preprocess(
+            source, profile=profile("capture_panel")
+        )
+        self.assertEqual(constants_pass.constant_count, 1)
+        self.assertNotIn("VALUE", output)
+
+    def test_rejects_unknown_feature_and_unsupported_placement(self):
+        with self.assertRaisesRegex(PreprocessorError, "unknown build feature"):
+            preprocess("if build_feature('missing'):\n    result = 1\n", profile=profile())
+        with self.assertRaisesRegex(PreprocessorError, "complete if conditions"):
+            preprocess("result = build_feature('capture_panel')\n", profile=profile())
+
+    def test_nested_disabled_markers_leave_no_empty_statement(self):
+        source = (
+            "if True:\n"
+            "    if build_feature('capture_panel'):\n"
+            "        result = 1\n"
+            "result = 2\n"
+        )
+        output, _ = preprocess(source, profile=profile())
+        self.assertNotIn("if True", output)
+        compile(output, "<test>", "exec")
+
+    def test_chess_source_metrics_are_independently_removable(self):
+        source_path = Path(__file__).resolve().parent.parent / "chess_evo.py"
+        source = source_path.read_text(encoding="utf-8")
+        cases = {
+            "debug_panel.metrics.last_key": ("def draw_debug_key", "import gc", "import time", "ai_evaluated_moves", "draw_ai_debug_metrics"),
+            "debug_panel.metrics.free_memory": ("gc.mem_free", "LK ", "import time", "ai_evaluated_moves", "draw_ai_debug_metrics"),
+            "debug_panel.metrics.ai_time": ("time.monotonic", "import gc", "LK ", "ai_evaluated_moves"),
+            "debug_panel.metrics.ai_evaluated_moves": ("ai_evaluated_moves", "import gc", "import time", "LK "),
+        }
+        for metric, (present, *absent) in cases.items():
+            with self.subTest(metric=metric):
+                output, _ = preprocess(source, str(source_path), profile(metric))
+                self.assertIn(present, output)
+                for text in absent:
+                    self.assertNotIn(text, output)
+                self.assertNotIn("build_feature", output)
+
+        release, _ = preprocess(source, str(source_path), profile())
+        self.assertNotIn("DEBUG", release)
+        self.assertNotIn("KEY_TRACE", release)
+        self.assertNotIn("build_feature", release)
 
 
 class InlineConstantsTests(unittest.TestCase):

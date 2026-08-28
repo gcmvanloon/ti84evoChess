@@ -15,7 +15,7 @@
             "problemMatcher": []
         },
         {
-            "label": "Chess: build minified",
+            "label": "release build",
             "type": "shell",
             "command": "powershell",
             "args": [
@@ -23,12 +23,60 @@
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                "${workspaceFolder}\\tools\\build_minified.ps1"
+                "${workspaceFolder}\\tools\\build_minified.ps1",
+                "-Profile",
+                "release"
             ],
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
+            "problemMatcher": []
+        },
+        {
+            "label": "debug build",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}\\tools\\build_minified.ps1",
+                "-Profile",
+                "debug"
+            ],
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "release metrics",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}\\tools\\measure_profile.ps1",
+                "-Profile",
+                "release"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "debug metrics",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}\\tools\\measure_profile.ps1",
+                "-Profile",
+                "debug"
+            ],
             "problemMatcher": []
         }
     ]

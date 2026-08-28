@@ -22,33 +22,34 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\setup_minifier.ps1
 
 ## Build
 
-Press `Ctrl+Shift+B`, or run **Terminal > Run Build Task** and select
-**Chess: build minified**. From a terminal, the equivalent command is:
+Press `Ctrl+Shift+B` to run the default **release build**, or use
+**Terminal > Run Build Task** and select either **release build** or
+**debug build**. Both tasks pass their profile explicitly. The equivalent
+terminal commands are:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1 -Profile release
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1 -Profile debug
 ```
 
-The build first runs `tools/ast_preprocessor.py`. Its initial optimization pass
-inlines module-level `NAME = const(literal)` declarations and folds constant
-tuple/dictionary indexes. The temporary preprocessed source is then passed to
-`python-minifier`. Both temporary files are removed after the build.
+The build first runs `tools/ast_preprocessor.py`. It removes disabled profile
+branches before inlining module-level `NAME = const(literal)` declarations and
+folding constant tuple/dictionary indexes. The temporary preprocessed source
+is then passed to `python-minifier`. Both temporary files are removed after the
+build.
 See `PREPROCESSOR.md` for the constant policy, pass architecture and validation
 requirements.
 
-The build overwrites `chess_evo_min.py`, compile-checks the readable,
-preprocessed, and minified sources, and prints their byte counts. After every
-successful build it records bytes, AST nodes and statements for all three
-stages in `BUILD_METRICS.csv`. A repeated build with identical inputs and
-metrics is not added again. When a previous record exists, the build prints
-the change in minified bytes, AST nodes and statements. The input fingerprint
-also covers the preprocessor, metrics recorder, build script, Python version
-request and pinned requirements so tool or configuration changes create a new
-record even when `chess_evo.py` is unchanged.
+The normal build overwrites `chess_evo_min.py`, compile-checks the readable,
+preprocessed, and minified sources, and prints byte and AST metrics. It does not
+write metrics history. Run **release metrics** or **debug metrics** to measure
+only that profile and update its `BUILD_METRICS_<PROFILE>.csv` history. Both
+tasks use temporary output and do not replace `chess_evo_min.py`.
+`BUILD_METRICS.csv` remains unchanged as legacy pre-profile history.
 
-Commit `BUILD_METRICS.csv`; it is the compact numerical history of successful
-builds, while Git history identifies the source change responsible for each
-entry. Edit only `chess_evo.py`; treat the minified file as generated output.
+Commit the per-profile metrics histories when intentionally measured; Git
+history identifies the source change responsible for each entry. Edit only
+`chess_evo.py`; treat the minified file as generated output.
 Literal hoisting is disabled because measurements showed it adds parser nodes
 and statements, which is a poor trade on the Evo-T. The core minifier settings
 are `hoist_literals=False`, `rename_locals=True`, and `rename_globals=True`.

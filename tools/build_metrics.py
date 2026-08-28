@@ -14,6 +14,7 @@ import platform
 import tempfile
 
 from ast_preprocessor import preprocess
+from build_profiles import load_resolved_profile
 
 
 FIELDNAMES = (
@@ -52,8 +53,11 @@ def file_metrics(path: Path) -> dict[str, int]:
     }
 
 
-def build_input_hash(paths: list[Path], root: Path) -> str:
+def build_input_hash(paths: list[Path], root: Path, profile_name: str) -> str:
     digest = hashlib.sha256()
+    digest.update(b"selected-profile\0")
+    digest.update(profile_name.encode("utf-8"))
+    digest.update(b"\0")
     for path in sorted(paths, key=lambda item: item.resolve().as_posix()):
         resolved = path.resolve()
         try:
@@ -74,15 +78,20 @@ def make_record(
     minified: Path,
     build_inputs: list[Path],
     root: Path,
+    config: Path,
+    profile_name: str,
 ) -> dict[str, str]:
     source_values = file_metrics(source)
     preprocessed_values = file_metrics(preprocessed)
     minified_values = file_metrics(minified)
-    _, constants_pass = preprocess(source.read_text(encoding="utf-8"), str(source))
+    profile = load_resolved_profile(config, profile_name)
+    _, constants_pass = preprocess(
+        source.read_text(encoding="utf-8"), str(source), profile
+    )
 
     return {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "build_input_sha256": build_input_hash(build_inputs, root),
+        "build_input_sha256": build_input_hash(build_inputs, root, profile_name),
         "source_bytes": str(source_values["bytes"]),
         "source_ast_nodes": str(source_values["ast_nodes"]),
         "source_statements": str(source_values["statements"]),
@@ -160,6 +169,8 @@ def main() -> int:
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--preprocessed", required=True, type=Path)
     parser.add_argument("--minified", required=True, type=Path)
+    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--profile", required=True)
     parser.add_argument("--inputs", required=True, nargs="+", type=Path)
     arguments = parser.parse_args()
 
@@ -170,6 +181,8 @@ def main() -> int:
         arguments.minified,
         arguments.inputs,
         root,
+        arguments.config,
+        arguments.profile,
     )
     previous, appended = record_build(arguments.history, record)
 

@@ -41,8 +41,9 @@ generated and ignored, and AST complexity matters more than source bytes alone.
   resolve to true.
 - The normal build processes only its selected profile and does not append
   build metrics.
-- A separate task measures every available profile and maintains one metrics
-  history per profile.
+- Use one explicit metrics task per profile that is intentionally measured.
+  The initial tasks are **release metrics** and **debug metrics**; there is no
+  aggregate "measure all profiles" task.
 - Keep the existing `BUILD_METRICS.csv` unchanged as legacy, pre-profile
   history. Do not rename it, rewrite it, or append profile builds to it.
 
@@ -288,11 +289,12 @@ execution, unparsing, compile checking, and atomic output separate.
 
 ## Normal build workflow
 
-The existing **Chess: build minified** task remains the default VS Code build
-task. It must:
+The **release build** task remains the default VS Code build task, and the
+separate **debug build** task selects the debug profile. Both tasks pass their
+profile explicitly to the build script. Each task must:
 
 1. read `build_profiles.json`;
-2. use `default_profile` unless a profile override was supplied;
+2. pass its named profile explicitly rather than relying on `default_profile`;
 3. validate and resolve only the selected profile;
 4. preprocess, minify, and compile-check that profile;
 5. write `chess_evo_min.py` atomically through the existing workflow;
@@ -305,23 +307,35 @@ Support an explicit terminal override such as:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1 -Profile debug
 ```
 
-An ordinary build must not build every profile. It is the fast, intermittent
-development path for the default or explicitly requested profile.
+The build script may still use `default_profile` when invoked directly without
+`-Profile`, but checked-in VS Code tasks must be explicit. An ordinary build
+must process only one profile. It is the fast, intermittent development path
+for the selected profile.
 
 ## Metrics workflow
 
-Add a separate VS Code task named **Chess: measure all profiles** and a
-checked-in script behind it. It must:
+Add separate **release metrics** and **debug metrics** VS Code tasks backed by
+one checked-in profile-specific script. **release metrics** passes `release`
+explicitly and **debug metrics** passes `debug` explicitly. Each task must:
 
-1. load and strictly validate `build_profiles.json`;
-2. enumerate all profiles in a deterministic order;
-3. run the complete preprocessing, minification, and compile-check workflow for
-   every profile;
-4. measure source, preprocessed, and minified bytes, AST nodes, and statements;
-5. append each result only to that profile's history using the existing
+1. load `build_profiles.json` and strictly validate the selected profile;
+2. run the complete preprocessing, minification, and compile-check workflow for
+   that profile;
+3. measure source, preprocessed, and minified bytes, AST nodes, and statements;
+4. append the result only to that profile's history using the existing
    distinct-build behavior; and
-6. use temporary generated outputs so the normal `chess_evo_min.py` is not
-   replaced by whichever profile happens to be measured last.
+5. use temporary generated output so `chess_evo_min.py` is not replaced.
+
+A profile metrics task must not build another profile or read, append, or
+rewrite another profile's history. Add another explicit task when a future
+profile needs routine measurement; do not restore aggregate enumeration.
+
+The terminal equivalents are:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\measure_profile.ps1 -Profile release
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\measure_profile.ps1 -Profile debug
+```
 
 Metrics histories use:
 
@@ -362,7 +376,8 @@ change.
 
 3. **Build and metrics separation**
    - Make the normal build select one profile and stop recording history.
-   - Add the all-profile metrics script and VS Code task.
+   - Add the shared profile-specific metrics script and explicit release/debug
+     VS Code tasks; do not add an aggregate measurement task.
    - Start new per-profile histories only when their builds are implemented and
      stable enough to measure.
 
@@ -402,16 +417,17 @@ Add focused desktop tests at each milestone. At minimum, cover:
 - independent capture/material combinations;
 - every debug metric alone and in useful combinations;
 - conditional undo integrations;
-- deterministic all-profile enumeration and metrics filenames;
-- normal builds not changing metrics files; and
+- deterministic profile-specific metrics filenames;
+- normal builds not changing metrics files;
+- each metrics task changing only its selected profile history; and
 - metrics builds not changing `chess_evo_min.py`.
 
 For every calculator-code milestone:
 
 1. run the preprocessor regression tests;
 2. run the normal default-profile build;
-3. run the all-profile metrics task when comparison data is intentionally
-   wanted;
+3. run the relevant profile metrics tasks when comparison data is
+   intentionally wanted;
 4. review generated code for disabled-feature residue;
 5. compare bytes, AST nodes, and statements by profile; and
 6. test affected profiles on a physical TI-84 Evo-T.

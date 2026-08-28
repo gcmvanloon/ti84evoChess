@@ -112,11 +112,11 @@ In VS Code, the equivalent task is **Chess: setup minifier**. It downloads the
 managed Python runtime when needed, creates `.venv`, and synchronizes the
 pinned tools. System Python and pip are not required.
 
-Generate the calculator build with the default VS Code build task
-(`Ctrl+Shift+B`), named **Chess: build minified**, or run:
+Generate the release calculator build with the default VS Code build task
+(`Ctrl+Shift+B`), named **release build**, or run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1 -Profile release
 ```
 
 The build task creates `chess_evo_min.py` through temporary preprocessed and
@@ -464,7 +464,7 @@ For every calculator-code change:
 5. preserve incremental redraws and highlight separation;
 6. favor fewer Python constructs and fewer graphics calls;
 7. run **Chess: setup minifier** only if `.venv` or its pinned tools are missing;
-8. run **Chess: build minified** to regenerate and compile-check
+8. run **release build** or **debug build** to regenerate and compile-check
    `chess_evo_min.py`;
 9. review the reported minified size and, when memory is tight, compare
    statement count, identifier count, and AST complexity;

@@ -1,0 +1,22 @@
+{
+  "default_profile": "release",
+  "profiles": {
+    "release": {
+      "piece_style": "graphical",
+      "features": {}
+    },
+    "debug": {
+      "piece_style": "graphical",
+      "features": {
+        "debug_panel": {
+          "metrics": {
+            "last_key": false,
+            "free_memory": false,
+            "ai_time": true,
+            "ai_evaluated_moves": true
+          }
+        }
+      }
+    }
+  }
+}

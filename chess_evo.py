@@ -1,10 +1,9 @@
 # TI-84 EVO-T CHESS v96
 # v9.6 - knight silhouette reshaped from simplified horse-head reference
 #
-# The compact build is generated from this version using only
-# semantics-preserving source transformations: identifier shortening,
-# drawing-call aliases, whitespace removal and safe statement packing.
-# Minimax depth, alpha-beta pruning, evaluation and randomness are unchanged.
+# Configuration selects calculator features before the remaining source is
+# optimized and minified. Minimax depth, alpha-beta pruning, evaluation and
+# randomness are unchanged.
 # Optimized redraw version
 #
 # ARROWS = move cursor
@@ -20,8 +19,21 @@
 import ti_draw
 import ti_system
 import random
-import gc
-import time
+
+def build_feature(name):
+    # Readable-source defaults keep the complete debug panel available. The
+    # desktop preprocessor removes this marker and every disabled branch.
+    return True
+
+def build_choice(option,value):
+    # The readable source uses the existing graphical piece implementation.
+    return option == "piece_style" and value == "graphical"
+
+if build_feature("debug_panel.metrics.free_memory"):
+    import gc
+
+if build_feature("debug_panel.metrics.ai_time"):
+    import time
 
 def const(value):
     # The desktop build preprocessor removes this marker and inlines the value.
@@ -57,7 +69,8 @@ KEY_RIGHT = const(26)
 KEY_DOWN  = const(34)
 KEY_CLEAR = const(45)
 KEY_ENTER = const(105)
-KEY_TRACE = const(14)
+if build_feature("debug_panel"):
+    KEY_TRACE = 14
 KEY_DEL   = const(23)
 
 BOARD_X = const(115)
@@ -300,11 +313,14 @@ turn = player_count = 0
 # Setup page: 0 = player count, 1 = human color, 2 = difficulty.
 menu_page = menu_select = human_side = 0
 ai_side = 1
-thinking = debug_panel = False
-# Results from the most recently completed AI search. A negative time means
-# that no AI move has been measured yet in the current game.
-ai_think_time = -1
-ai_evaluated_moves = 0
+thinking = False
+if build_feature("debug_panel"):
+    debug_panel = False
+if build_feature("debug_panel.metrics.ai_time"):
+    # A negative time means no AI move has been measured in this game.
+    ai_think_time = -1
+if build_feature("debug_panel.metrics.ai_evaluated_moves"):
+    ai_evaluated_moves = -1
 
 message = "SELECT PIECE"
 winner = ""
@@ -532,15 +548,17 @@ def clear_status_content():
     fill_rect_at(0,45,LEFT_PANEL_W,108)
 
 def draw_status_panel():
-    global debug_panel
-
-    # Routine status changes stay hidden while debugging. Only an interactive
-    # prompt takes priority and switches back to the complete status view.
-    if debug_panel:
-        if not (quit_confirm or winner or stalemate or promotion_pending):
-            return
-        debug_panel = False
-        draw_status_panel_frame()
+    if build_feature("debug_panel"):
+        global debug_panel
+        # Routine status changes stay hidden while debugging. Only an
+        # interactive prompt takes priority over the debug view.
+        if debug_panel:
+            if not (quit_confirm or winner or stalemate or promotion_pending):
+                return
+            debug_panel = False
+            draw_status_panel_frame()
+        else:
+            clear_status_content()
     else:
         clear_status_content()
 
@@ -616,48 +634,56 @@ def draw_status_panel():
         ti_draw.draw_text(5,103,message)
 
 
-def draw_debug_panel_frame():
-    # Debug owns every row of the complete left panel.
-    ti_draw.set_color(240,165,70)
-    fill_rect_at(0,18,LEFT_PANEL_W-1,209)
-    draw_rect_at(0,18,LEFT_PANEL_W-1,209)
-    ti_draw.set_color(0,60,170)
-    ti_draw.draw_text(5,26,"DEBUG")
-    draw_debug_metric(0,"LK --")
-    draw_debug_metric(1,"FM "+str(gc.mem_free()))
-    if player_count == 1:
-        draw_ai_debug_metrics()
+if build_feature("debug_panel"):
+    def draw_debug_panel_frame():
+        # Enabled rows are packed from the top without per-combination panels.
+        ti_draw.set_color(240,165,70)
+        fill_rect_at(0,18,LEFT_PANEL_W-1,209)
+        draw_rect_at(0,18,LEFT_PANEL_W-1,209)
+        ti_draw.set_color(0,60,170)
+        ti_draw.draw_text(5,26,"DEBUG")
+        debug_row = 0
+        if build_feature("debug_panel.metrics.last_key"):
+            draw_debug_key("--")
+            debug_row += 1
+        if build_feature("debug_panel.metrics.free_memory"):
+            draw_debug_metric(debug_row,"FM "+str(gc.mem_free()))
+            debug_row += 1
+        if player_count == 1:
+            if build_feature("debug_panel.metrics.ai_time"):
+                draw_ai_debug_metrics(debug_row)
+            else:
+                if build_feature("debug_panel.metrics.ai_evaluated_moves"):
+                    draw_ai_debug_metrics(debug_row)
 
 
-def draw_debug_metric(index,text):
-    # Each metric owns one non-overlapping 16-pixel row. Keeping both the
-    # clear and text coordinates here prevents one refresh erasing another.
-    y = 53+index*16
-    ti_draw.set_color(240,165,70)
-    fill_rect_at(4,y,91,16)
-    ti_draw.set_color(0,60,170)
-    ti_draw.draw_text(5,y,text)
+    def draw_debug_metric(index,text):
+        y = 53+index*16
+        ti_draw.set_color(240,165,70)
+        fill_rect_at(4,y,91,16)
+        ti_draw.set_color(0,60,170)
+        ti_draw.draw_text(5,y,text)
 
 
-def draw_ai_debug_metrics():
-    # These rows can be refreshed after an AI turn without repainting the
-    # complete debug panel. Show tenths of a second while that fits.
-    if ai_think_time < 0:
-        draw_debug_metric(2,"AI --")
-        draw_debug_metric(3,"MV --")
-        return
+    def draw_ai_debug_metrics(debug_row):
+        if build_feature("debug_panel.metrics.ai_time"):
+            if ai_think_time < 0:
+                time_text = "AI --"
+            else:
+                tenths = int(ai_think_time*10)
+                time_text = "AI "+str(tenths//10)+"."+str(tenths%10)+"S"
+                if text_width(time_text) > LEFT_PANEL_W-10:
+                    time_text = "AI "+str(int(ai_think_time))+"S"
+            draw_debug_metric(debug_row,time_text)
+            debug_row += 1
+        if build_feature("debug_panel.metrics.ai_evaluated_moves"):
+            move_text = "MV --" if ai_evaluated_moves < 0 else "MV "+str(ai_evaluated_moves)
+            draw_debug_metric(debug_row,move_text)
 
-    tenths = int(ai_think_time*10)
-    time_text = "AI "+str(tenths//10)+"."+str(tenths%10)+"S"
-    if text_width(time_text) > LEFT_PANEL_W-10:
-        time_text = "AI "+str(int(ai_think_time))+"S"
-    move_text = "MV "+str(ai_evaluated_moves)
-    draw_debug_metric(2,time_text)
-    draw_debug_metric(3,move_text)
 
-
-def draw_debug_key(key):
-    draw_debug_metric(0,"LK "+str(key))
+    if build_feature("debug_panel.metrics.last_key"):
+        def draw_debug_key(key):
+            draw_debug_metric(0,"LK "+str(key))
 
 
 def draw_game_over_popup():
@@ -985,8 +1011,13 @@ def reset_game_state():
     global black_castle_k, black_castle_q
     global en_passant_x, en_passant_y
     global white_captures, black_captures
-    global thinking, debug_panel
-    global ai_think_time, ai_evaluated_moves
+    global thinking
+    if build_feature("debug_panel"):
+        global debug_panel
+    if build_feature("debug_panel.metrics.ai_time"):
+        global ai_think_time
+    if build_feature("debug_panel.metrics.ai_evaluated_moves"):
+        global ai_evaluated_moves
     global human_side, ai_side
 
     board = [
@@ -1009,9 +1040,13 @@ def reset_game_state():
     winner = ""
     stalemate = quit_confirm = False
     check_turn = -1
-    thinking = debug_panel = False
-    ai_think_time = -1
-    ai_evaluated_moves = 0
+    thinking = False
+    if build_feature("debug_panel"):
+        debug_panel = False
+    if build_feature("debug_panel.metrics.ai_time"):
+        ai_think_time = -1
+    if build_feature("debug_panel.metrics.ai_evaluated_moves"):
+        ai_evaluated_moves = -1
 
     promotion_pending = False
     promotion_x = promotion_y = promotion_side = -1
@@ -1988,10 +2023,10 @@ def evaluate_board():
 
 
 def minimax(depth,alpha,beta,side,ply=1):
-    global ai_evaluated_moves
-    # Every call evaluates the position reached by one simulated move. This
-    # includes terminal positions and reflects alpha-beta pruning.
-    ai_evaluated_moves += 1
+    if build_feature("debug_panel.metrics.ai_evaluated_moves"):
+        global ai_evaluated_moves
+        # Every call evaluates the position reached by one simulated move.
+        ai_evaluated_moves += 1
     white_king = find_king(0)
     black_king = find_king(1)
     if white_king is None:
@@ -2388,20 +2423,34 @@ while running:
     if player_count == 1 and turn == ai_side:
         thinking = True
         draw_status_panel()
-        ai_evaluated_moves = 0
-        ai_think_time = time.monotonic()
+        if build_feature("debug_panel.metrics.ai_evaluated_moves"):
+            ai_evaluated_moves = 0
+        if build_feature("debug_panel.metrics.ai_time"):
+            ai_think_time = time.monotonic()
         ai_move = find_best_move(AI_DEPTH,ai_side)
-        ai_think_time = time.monotonic()-ai_think_time
+        if build_feature("debug_panel.metrics.ai_time"):
+            ai_think_time = time.monotonic()-ai_think_time
         thinking = False
-        if debug_panel:
-            draw_ai_debug_metrics()
+        if build_feature("debug_panel"):
+            if debug_panel:
+                debug_row = 0
+                if build_feature("debug_panel.metrics.last_key"):
+                    debug_row += 1
+                if build_feature("debug_panel.metrics.free_memory"):
+                    debug_row += 1
+                if build_feature("debug_panel.metrics.ai_time"):
+                    draw_ai_debug_metrics(debug_row)
+                else:
+                    if build_feature("debug_panel.metrics.ai_evaluated_moves"):
+                        draw_ai_debug_metrics(debug_row)
         perform_ai_move(ai_move)
         continue
 
     key = wait_for_key()
 
-    if debug_panel and key != KEY_TRACE:
-        draw_debug_key(key)
+    if build_feature("debug_panel.metrics.last_key"):
+        if debug_panel and key != KEY_TRACE:
+            draw_debug_key(key)
 
     # First CLEAR press only asks to return to the main menu.
     if key == KEY_CLEAR:
@@ -2409,15 +2458,16 @@ while running:
         draw_status_panel()
         continue
 
-    if key == KEY_TRACE:
-        if debug_panel:
-            debug_panel = False
-            draw_status_panel_frame()
-            draw_status_panel()
-        else:
-            debug_panel = True
-            draw_debug_panel_frame()
-        continue
+    if build_feature("debug_panel"):
+        if key == KEY_TRACE:
+            if debug_panel:
+                debug_panel = False
+                draw_status_panel_frame()
+                draw_status_panel()
+            else:
+                debug_panel = True
+                draw_debug_panel_frame()
+            continue
 
     if key == KEY_DEL:
         undo_played_moves()

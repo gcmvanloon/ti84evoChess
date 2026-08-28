@@ -10,6 +10,16 @@ from pathlib import Path
 import tempfile
 from typing import Protocol
 
+# Configuration boundary: build_profiles owns JSON/schema semantics and gives
+# this module one validated ResolvedProfile. AST passes never read JSON.
+from build_profiles import (
+    CHOICES,
+    FEATURE_NAMES,
+    ProfileError,
+    ResolvedProfile,
+    load_resolved_profile,
+)
+
 
 class PreprocessorError(ValueError):
     """Raised when source uses an optimization marker unsafely."""
@@ -32,6 +42,112 @@ class PassPipeline:
         for ast_pass in self.passes:
             tree = ast_pass.run(tree)
             ast.fix_missing_locations(tree)
+        return tree
+
+
+class SelectBuildFeaturesPass(ast.NodeTransformer):
+    """Apply a ``ResolvedProfile`` to statically recognized source markers."""
+
+    name = "select build features"
+    marker_names = frozenset(("build_feature", "build_choice"))
+
+    def __init__(self, profile: ResolvedProfile) -> None:
+        self.profile = profile
+        self.selected_branches = 0
+        self.removed_branches = 0
+        self._condition_calls: set[int] = set()
+
+    @staticmethod
+    def _error(node: ast.AST, message: str) -> PreprocessorError:
+        return PreprocessorError(f"line {getattr(node, 'lineno', '?')}: {message}")
+
+    def _selection(self, node: ast.expr) -> bool | None:
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in self.marker_names
+        ):
+            return None
+        self._condition_calls.add(id(node))
+        if node.keywords:
+            raise self._error(node, "build markers do not accept keyword arguments")
+        values = [item.value for item in node.args if isinstance(item, ast.Constant)]
+        if len(values) != len(node.args) or not all(isinstance(value, str) for value in values):
+            raise self._error(node, "build marker arguments must be string literals")
+        if node.func.id == "build_feature":
+            if len(values) != 1:
+                raise self._error(node, "build_feature() requires one argument")
+            feature = values[0]
+            if feature not in FEATURE_NAMES:
+                raise self._error(node, f"unknown build feature {feature!r}")
+            return self.profile.features[feature]
+        if len(values) != 2:
+            raise self._error(node, "build_choice() requires two arguments")
+        option, value = values
+        if option not in CHOICES:
+            raise self._error(node, f"unknown build choice {option!r}")
+        if value not in CHOICES[option]:
+            raise self._error(node, f"unknown value {value!r} for build choice {option!r}")
+        return getattr(self.profile, option) == value
+
+    def _visit_statements(self, statements: list[ast.stmt]) -> list[ast.stmt]:
+        result: list[ast.stmt] = []
+        for statement in statements:
+            transformed = self.visit(statement)
+            if isinstance(transformed, list):
+                result.extend(transformed)
+            elif transformed is not None:
+                result.append(transformed)
+        return result
+
+    def visit_If(self, node: ast.If) -> ast.If | list[ast.stmt]:
+        selected = self._selection(node.test)
+        if selected is None:
+            node = self.generic_visit(node)
+            if not node.body and not node.orelse:
+                return []
+            return node
+        self.selected_branches += 1
+        self.removed_branches += 1
+        return self._visit_statements(node.body if selected else node.orelse)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef | None:
+        node = self.generic_visit(node)
+        return node if node.body else None
+
+    def visit_AsyncFunctionDef(
+        self, node: ast.AsyncFunctionDef
+    ) -> ast.AsyncFunctionDef | None:
+        node = self.generic_visit(node)
+        return node if node.body else None
+
+    def run(self, tree: ast.Module) -> ast.Module:
+        # Register supported marker conditions before rejecting marker calls in
+        # expressions, assignments, or other unsupported placements.
+        for node in ast.walk(tree):
+            if isinstance(node, ast.If):
+                self._selection(node.test)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in self.marker_names
+                and id(node) not in self._condition_calls
+            ):
+                raise self._error(node, "build markers are only supported as complete if conditions")
+
+        tree = self.visit(tree)
+        tree.body = [
+            statement
+            for statement in tree.body
+            if not (
+                isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and statement.name in self.marker_names
+            )
+        ]
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id in self.marker_names:
+                raise self._error(node, f"build marker {node.id} cannot be read as a value")
         return tree
 
 
@@ -397,10 +513,27 @@ class InlineConstantsPass:
         return tree
 
 
-def preprocess(source: str, filename: str = "<unknown>") -> tuple[str, InlineConstantsPass]:
+def source_default_profile() -> ResolvedProfile:
+    features = {name: False for name in FEATURE_NAMES}
+    for name in features:
+        if name.startswith("debug_panel.metrics."):
+            features[name] = True
+    features["debug_panel"] = True
+    return ResolvedProfile("source-defaults", "graphical", features)
+
+
+def preprocess(
+    source: str,
+    filename: str = "<unknown>",
+    profile: ResolvedProfile | None = None,
+) -> tuple[str, InlineConstantsPass]:
     tree = ast.parse(source, filename=filename)
+    # Profile resolution is complete before this boundary. The pass consumes
+    # only resolved feature Booleans and choices, then constant inlining runs
+    # on the selected tree.
+    features_pass = SelectBuildFeaturesPass(profile or source_default_profile())
     constants_pass = InlineConstantsPass()
-    tree = PassPipeline([constants_pass]).run(tree)
+    tree = PassPipeline([features_pass, constants_pass]).run(tree)
     output = ast.unparse(tree) + "\n"
     compile(output, filename, "exec")
     return output, constants_pass
@@ -429,10 +562,29 @@ def main() -> int:
     )
     parser.add_argument("input", type=Path, help="readable Python input file")
     parser.add_argument("output", type=Path, help="preprocessed Python output file")
+    parser.add_argument("--config", type=Path, help="JSON build-profile configuration")
+    parser.add_argument("--profile", help="named profile override")
     arguments = parser.parse_args()
 
     source = arguments.input.read_text(encoding="utf-8")
-    output, constants_pass = preprocess(source, str(arguments.input))
+    if arguments.profile and not arguments.config:
+        parser.error("--profile requires --config")
+    try:
+        # build_profiles.py owns loading and schema validation. From here on,
+        # preprocessing works only with the returned ResolvedProfile.
+        profile = (
+            load_resolved_profile(arguments.config, arguments.profile)
+            if arguments.config
+            else source_default_profile()
+        )
+    except ProfileError as error:
+        parser.error(str(error))
+    enabled = ", ".join(profile.enabled_features) or "none"
+    print(
+        f"Build profile: {profile.name}; piece style: {profile.piece_style}; "
+        f"enabled features: {enabled}."
+    )
+    output, constants_pass = preprocess(source, str(arguments.input), profile)
     write_atomic(arguments.output, output)
     before_nodes = sum(1 for _ in ast.walk(ast.parse(source)))
     after_nodes = sum(1 for _ in ast.walk(ast.parse(output)))
