@@ -926,7 +926,7 @@ def apply_difficulty():
     if menu_select == 0:
         AI_DEPTH = 1
         AI_RANDOMNESS = 6
-        AI_SCORE_MARGIN = 100
+        AI_SCORE_MARGIN = 150
     elif menu_select == 1:
         AI_DEPTH = 2
         AI_RANDOMNESS = 3
@@ -2087,9 +2087,10 @@ def find_best_move(depth=AI_DEPTH,side=1):
             state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,0)
             score = minimax(depth-1,alpha,beta,0,1)
             # Easy does not search the reply, so cheaply penalize leaving the
-            # moved piece where White can capture it on the next turn.
+            # moved piece where White can capture it on the next turn. Use
+            # one third of its value so Easy accepts trades and modest risks.
             if depth == 1 and is_square_attacked(target>>3,target&7,0):
-                score = score-AI_PIECE_VALUES[board[target>>3][target&7].lower()]
+                score = score-AI_PIECE_VALUES[board[target>>3][target&7].lower()]//3
             undo_move(state)
             scored.append((move,score))
             if score > best_score:
@@ -2121,7 +2122,7 @@ def find_best_move(depth=AI_DEPTH,side=1):
         state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,0)
         score = minimax(depth-1,alpha,beta,1,1)
         if depth == 1 and is_square_attacked(target>>3,target&7,1):
-            score = score+AI_PIECE_VALUES[board[target>>3][target&7].lower()]
+            score = score+AI_PIECE_VALUES[board[target>>3][target&7].lower()]//3
         undo_move(state)
         scored.append((move,score))
         if score < best_score:
