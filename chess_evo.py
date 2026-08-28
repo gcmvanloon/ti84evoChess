@@ -403,6 +403,12 @@ def square_color(x,y):
         return (205,185,145)
     return (120,80,45)
 
+def last_move_color(x,y):
+    # Keep the move tint in the same light/dark family as the board.
+    if (x+y)%2 == 0:
+        return (170,200,135)
+    return (80,115,60)
+
 def draw_piece(x,y):
     p = board[y][x]
     if p == ".":
@@ -448,19 +454,26 @@ def refresh_tile_highlight(x,y):
         draw_tile_highlight(x,y,(0,200,255))
     elif last_move is not None and ((x == last_move[0] and y == last_move[1]) or \
          (x == last_move[2] and y == last_move[3])):
-        draw_tile_highlight(x,y,(0,180,0))
+        draw_tile_highlight(x,y,last_move_color(x,y))
 
 
-def draw_square(x,y):
+def draw_square(x,y,col):
     # Gameplay redraw: repaint only this tile's 16x16 interior and its piece.
     # The 1-pixel outer edge is owned by the independent highlight system.
     px = BOARD_X + x*SQUARE
     py = BOARD_Y + y*SQUARE
 
-    col = square_color(x,y)
     ti_draw.set_color(col[0],col[1],col[2])
     fill_rect_at(px,py,SQUARE-1,SQUARE-1)
     draw_piece(x,y)
+
+def redraw_square(x,y):
+    # Repaint a changed interior, preserving a last-move tint when applicable.
+    col = square_color(x,y)
+    if last_move is not None and ((x == last_move[0] and y == last_move[1]) or \
+       (x == last_move[2] and y == last_move[3])):
+        col = last_move_color(x,y)
+    draw_square(x,y,col)
 
 def draw_empty_board():
     # Initial board paint is much cheaper than drawing all 64 tiles. First
@@ -794,15 +807,17 @@ def clear_ai_move_highlight():
 
     old_move = last_move
 
-    # Clear the state before refreshing the frames so they are no longer
-    # interpreted as green-highlighted squares.
+    # Clear the state before repainting so both interiors return to their
+    # normal board colors. Then restore any cursor/selection borders.
     last_move = None
 
     if old_move is not None:
         old_from_x, old_from_y, old_to_x, old_to_y = old_move
+        redraw_square(old_from_x,old_from_y)
         refresh_tile_highlight(old_from_x,old_from_y)
 
         if old_to_x != old_from_x or old_to_y != old_from_y:
+            redraw_square(old_to_x,old_to_y)
             refresh_tile_highlight(old_to_x,old_to_y)
 
 
@@ -1031,23 +1046,23 @@ def perform_ai_move(move):
     # the two independent highlight frames explicitly.
     last_move = (x1,y1,x2,y2)
 
-    draw_square(x1,y1)
-    draw_square(x2,y2)
+    redraw_square(x1,y1)
+    redraw_square(x2,y2)
     refresh_tile_highlight(x1,y1)
     refresh_tile_highlight(x2,y2)
 
     if captured_piece != "." and (capture_y != y2 or capture_x != x2):
-        draw_square(
+        redraw_square(
             capture_x,
             capture_y
         )
 
     if rook_from_x >= 0:
-        draw_square(
+        redraw_square(
             rook_from_x,
             y2
         )
-        draw_square(
+        redraw_square(
             rook_to_x,
             y2
         )
@@ -2209,7 +2224,7 @@ def redraw_check_change(old_check,new_check):
             y = old_pos[0]
             x = old_pos[1]
 
-            draw_square(
+            redraw_square(
                 x,
                 y
             )
@@ -2222,7 +2237,7 @@ def redraw_check_change(old_check,new_check):
             y = new_pos[0]
             x = new_pos[1]
 
-            draw_square(
+            redraw_square(
                 x,
                 y
             )
@@ -2390,7 +2405,7 @@ while running:
                 board[promotion_y][promotion_x] = choice.upper()
 
             # Draw the selected promoted piece.
-            draw_square(
+            redraw_square(
                 promotion_x,
                 promotion_y
             )
@@ -2628,11 +2643,11 @@ while running:
 
                 # Redraw only the changed square interiors, then update their
                 # highlight states independently.
-                draw_square(
+                redraw_square(
                     old_selected_x,
                     old_selected_y
                 )
-                draw_square(
+                redraw_square(
                     move_x,
                     move_y
                 )
@@ -2641,18 +2656,18 @@ while running:
 
                 # Redraw the removed en-passant pawn.
                 if en_passant_move:
-                    draw_square(
+                    redraw_square(
                         capture_x,
                         capture_y
                     )
 
                 # Redraw rook source/destination after castling.
                 if castling_move:
-                    draw_square(
+                    redraw_square(
                         rook_from_x,
                         move_y
                     )
-                    draw_square(
+                    redraw_square(
                         rook_to_x,
                         move_y
                     )
