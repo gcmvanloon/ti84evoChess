@@ -288,13 +288,11 @@ turn = 0
 # 0 = white
 # 1 = black
 
-# Game mode. 0 means the player-count menu is active.
+# Game mode. 0 means a setup menu is active.
 player_count = 0
-player_select = 1
-difficulty_select = 1
-difficulty_menu = False
-color_select = 0
-color_menu = False
+# Setup page: 0 = player count, 1 = human color, 2 = difficulty.
+menu_page = 0
+menu_select = 0
 human_side = 0
 ai_side = 1
 thinking = False
@@ -303,6 +301,7 @@ message = "SELECT PIECE"
 winner = ""
 stalemate = False
 quit_confirm = False
+quit_select = 1
 check_turn = -1
 # -1 = no check, 0 = white in check, 1 = black in check
 
@@ -536,7 +535,10 @@ def draw_left_panel():
     # Static text must be redrawn after painting the background.
     ti_draw.draw_text(5,26,"CHESS")
     ti_draw.draw_text(5,153,"CLEAR")
-    ti_draw.draw_text(5,169,"MENU")
+    if quit_confirm:
+        ti_draw.draw_text(5,169,"CANCEL")
+    else:
+        ti_draw.draw_text(5,169,"MENU")
 
 def draw_status():
     # Put the blue-gray panel on top of any previous left-side drawing.
@@ -545,20 +547,8 @@ def draw_status():
     if quit_confirm:
         ti_draw.set_color(0,0,0)
         ti_draw.draw_text(5,53,"RETURN?")
-
-        # Keep the complete confirmation inside the area that
-        # draw_status() clears when the dialog is dismissed.
-        ti_draw.set_color(0,0,0)
-        ti_draw.draw_text(5,85,"ENTER")
-
-        ti_draw.set_color(0,170,0)
-        ti_draw.draw_text(57,85,"YES")
-
-        ti_draw.set_color(0,0,0)
-        ti_draw.draw_text(5,105,"CLEAR")
-
-        ti_draw.set_color(220,0,0)
-        ti_draw.draw_text(57,105,"NO")
+        ti_draw.draw_line(5,76+SHAPE_Y_FIX,95,76+SHAPE_Y_FIX)
+        draw_quit_choices()
         return
 
     if winner != "" or stalemate:
@@ -571,28 +561,12 @@ def draw_status():
     if promotion_pending:
         ti_draw.set_color(0,0,0)
         ti_draw.draw_text(5,53,"PROMOTE")
+        ti_draw.draw_line(5,76+SHAPE_Y_FIX,95,76+SHAPE_Y_FIX)
 
         i = 0
 
         while i < 4:
-            x = 6 + i*22
-            y = 84
-
-            if i == promotion_index:
-                ti_draw.set_color(255,180,0)
-                draw_rect_at(x-2,y-2,20,20)
-                draw_rect_at(x-1,y-1,18,18)
-
-            choice = PROMOTION_CHOICES[i]
-
-            if promotion_side == 0:
-                piece = choice
-            else:
-                piece = choice.upper()
-
-            # Always draw promotion choices as player 2 pieces for readability.
-            draw_piece_shape(piece,x,y,False)
-
+            draw_promotion_choice(i,i == promotion_index)
             i = i + 1
 
         ti_draw.set_color(0,0,0)
@@ -849,128 +823,82 @@ def clear_ai_move_highlight():
             refresh_tile_highlight(old_to_x,old_to_y)
 
 
-def draw_menu_choice(text_x,text_y,text,selected,r,g,b):
-    # Clear the complete option row, not merely the previous calculated box.
-    # This guarantees that no edge of an old yellow frame can remain visible.
-    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
-    fill_rect_at(64,text_y-7,112,28)
-
-    # The Evo-T menu font is slightly wider than the estimate used in v66.
-    # Keep seven pixels on the left and add four extra pixels on the right.
-    box_x = text_x-7
-    box_y = text_y-4
-    box_w = len(text)*9+18
-    box_h = 24
-
+def draw_choice_box(x,y,w,h,selected):
+    # Selection geometry is independent of its text or piece content. The
+    # extra fill pixel compensates for fill_rect() excluding its far edge.
     if selected:
-        ti_draw.set_color(255,180,0)
-
-        # One native outline rectangle is cheaper than four Python line calls.
-        draw_rect_at(box_x,box_y,box_w-1,box_h-1)
-
-    ti_draw.set_color(r,g,b)
-    ti_draw.draw_text(text_x,text_y,text)
-
-
-def draw_player_choice(value,selected):
-    if value == 1:
-        draw_menu_choice(77,101,"1 PLAYER",selected,0,0,0)
+        ti_draw.set_color(255,210,90)
     else:
-        draw_menu_choice(77,129,"2 PLAYERS",selected,0,0,0)
+        ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
+    fill_rect_at(x,y,w+1,h+1)
 
 
-def update_player_select(old_value,new_value):
-    draw_player_choice(old_value,False)
-    draw_player_choice(new_value,True)
+def draw_text_choice(x,y,w,text,selected):
+    draw_choice_box(x,y,w,24,selected)
+    ti_draw.set_color(0,0,0)
+    ti_draw.draw_text(x+(w-text_width(text))//2,y+4,text)
 
 
-def draw_color_choice(value,selected):
-    if value == 0:
-        draw_menu_choice(89,105,"WHITE",selected,0,0,0)
-    else:
-        draw_menu_choice(89,133,"BLACK",selected,0,0,0)
+def draw_promotion_choice(index,selected):
+    # Promotion uses the same choice background, but keeps the native 16x16
+    # piece renderers instead of substituting text chess symbols.
+    x = 4 + index*22
+    y = 82
+    draw_choice_box(x,y,20,20,selected)
+    piece = PROMOTION_CHOICES[index]
+    if promotion_side == 1:
+        piece = piece.upper()
+    draw_piece_shape(piece,x+2,y+2,promotion_side == 0)
 
 
-def update_color_select(old_value,new_value):
-    draw_color_choice(old_value,False)
-    draw_color_choice(new_value,True)
+def draw_quit_choices():
+    draw_text_choice(5,83,90,"YES",quit_select == 0)
+    draw_text_choice(5,111,90,"NO",quit_select == 1)
 
 
-def draw_difficulty_choice(value,selected):
-    if value == 1:
-        draw_menu_choice(85,101,"EASY",selected,0,170,0)
-    elif value == 2:
-        draw_menu_choice(85,129,"MEDIUM",selected,220,160,0)
-    else:
-        draw_menu_choice(85,157,"HARD",selected,220,0,0)
+def draw_menu_option(index,text,selected,count):
+    # Two- and three-row menus share one centered column. Three-row menus
+    # start higher so their complete group remains vertically balanced.
+    y = 96 if count == 2 else 82
+    draw_text_choice(70,y+index*30,180,text,selected)
 
 
-def update_difficulty_select(old_value,new_value):
-    draw_difficulty_choice(old_value,False)
-    draw_difficulty_choice(new_value,True)
-
-
-def draw_player_select_screen():
+def draw_menu_screen(title,choices,selected,back_text):
     ti_draw.clear()
     ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
     fill_rect_at(0,18,320,210)
 
     ti_draw.set_color(0,0,0)
-    ti_draw.draw_text(96,45,"CHESS")
-    ti_draw.draw_text(72,73,"PLAYERS")
-    draw_player_choice(1,player_select == 1)
-    draw_player_choice(2,player_select == 2)
+    ti_draw.draw_text((320-text_width("CHESS"))//2,28,"CHESS")
+    ti_draw.draw_text((320-text_width(title))//2,52,title)
+    ti_draw.draw_line(70,76+SHAPE_Y_FIX,250,76+SHAPE_Y_FIX)
+
+    i = 0
+    while i < len(choices):
+        draw_menu_option(i,choices[i],i == selected,len(choices))
+        i = i+1
 
     ti_draw.set_color(0,0,0)
-    ti_draw.draw_text(70,166,"UP/DOWN")
-    ti_draw.draw_text(82,182,"ENTER")
-    ti_draw.draw_text(240,166,"CLEAR")
-    ti_draw.draw_text(244,182,"QUIT")
+    ti_draw.draw_text(48,178,"ARROWS: MOVE")
+    ti_draw.draw_text(48,196,"ENTER: OK")
+    ti_draw.draw_text(202,196,"CLEAR: "+back_text)
 
 
-def draw_color_screen():
-    ti_draw.clear()
-    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
-    fill_rect_at(0,18,320,210)
-
-    ti_draw.set_color(0,0,0)
-    ti_draw.draw_text(96,45,"CHESS")
-    ti_draw.draw_text(76,73,"YOUR COLOR")
-    draw_color_choice(0,color_select == 0)
-    draw_color_choice(1,color_select == 1)
-
-    ti_draw.set_color(0,0,0)
-    ti_draw.draw_text(70,170,"UP/DOWN")
-    ti_draw.draw_text(82,186,"ENTER")
-    ti_draw.draw_text(240,170,"CLEAR")
-    ti_draw.draw_text(244,186,"RETURN")
-
-
-def draw_difficulty_screen():
-    ti_draw.clear()
-    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
-    fill_rect_at(0,18,320,210)
-
-    ti_draw.set_color(0,0,0)
-    ti_draw.draw_text(96,45,"CHESS")
-    ti_draw.draw_text(68,69,"DIFFICULTY")
-    draw_difficulty_choice(1,difficulty_select == 1)
-    draw_difficulty_choice(2,difficulty_select == 2)
-    draw_difficulty_choice(3,difficulty_select == 3)
-
-    ti_draw.set_color(0,0,0)
-    ti_draw.draw_text(70,184,"UP/DOWN")
-    ti_draw.draw_text(82,200,"ENTER")
-    ti_draw.draw_text(240,184,"CLEAR")
-    ti_draw.draw_text(244,200,"RETURN")
+def draw_current_menu():
+    if menu_page == 0:
+        draw_menu_screen("NUMBER OF PLAYERS",("1 PLAYER","2 PLAYERS"),menu_select,"QUIT")
+    elif menu_page == 1:
+        draw_menu_screen("PLAY AS",("WHITE","BLACK"),menu_select,"BACK")
+    else:
+        draw_menu_screen("DIFFICULTY",("EASY","MEDIUM","HARD"),menu_select,"BACK")
 
 
 def apply_difficulty():
     global AI_DEPTH, AI_RANDOMNESS
-    if difficulty_select == 1:
+    if menu_select == 0:
         AI_DEPTH = 1
         AI_RANDOMNESS = 6
-    elif difficulty_select == 2:
+    elif menu_select == 1:
         AI_DEPTH = 2
         AI_RANDOMNESS = 3
     else:
@@ -982,7 +910,7 @@ def reset_game_state():
     global board, cursor_x, cursor_y
     global white_cursor, black_cursor, last_move
     global selected, turn, message
-    global winner, stalemate, quit_confirm, check_turn
+    global winner, stalemate, quit_confirm, quit_select, check_turn
     global promotion_pending, promotion_x, promotion_y
     global promotion_side, promotion_index
     global white_score, black_score, move_count
@@ -1017,6 +945,7 @@ def reset_game_state():
     winner = ""
     stalemate = False
     quit_confirm = False
+    quit_select = 1
     check_turn = -1
     thinking = False
 
@@ -2278,7 +2207,7 @@ def redraw_check_change(old_check,new_check):
             )
 
 
-draw_player_select_screen()
+draw_current_menu()
 
 running = True
 
@@ -2296,78 +2225,63 @@ while running:
     key = wait_for_key()
 
     # -------------------------
-    # COLOR MENU
+    # SETUP MENUS
     # -------------------------
-
-    if color_menu:
-        if key == KEY_UP or key == KEY_DOWN:
-            old_select = color_select
-            color_select = 1-color_select
-            update_color_select(old_select,color_select)
-        elif key == KEY_ENTER:
-            human_side = color_select
-            ai_side = 1-human_side
-            color_menu = False
-            difficulty_select = 1
-            difficulty_menu = True
-            draw_difficulty_screen()
-        elif key == KEY_CLEAR:
-            color_menu = False
-            draw_player_select_screen()
-        continue
-
-    # -------------------------
-    # DIFFICULTY MENU
-    # -------------------------
-
-    if difficulty_menu:
-        if key == KEY_UP:
-            old_select = difficulty_select
-            difficulty_select = difficulty_select-1
-            if difficulty_select < 1:
-                difficulty_select = 3
-            update_difficulty_select(old_select,difficulty_select)
-        elif key == KEY_DOWN:
-            old_select = difficulty_select
-            difficulty_select = difficulty_select+1
-            if difficulty_select > 3:
-                difficulty_select = 1
-            update_difficulty_select(old_select,difficulty_select)
-        elif key == KEY_ENTER:
-            apply_difficulty()
-            difficulty_menu = False
-            player_count = 1
-            reset_game_state()
-            draw_initial_screen()
-        elif key == KEY_CLEAR:
-            difficulty_menu = False
-            color_menu = True
-            draw_color_screen()
-        continue
-
-    # -------------------------
-    # PLAYER COUNT MENU
-    # -------------------------
-
     if player_count == 0:
-        if key == KEY_UP or key == KEY_DOWN:
-            old_select = player_select
-            if player_select == 1:
-                player_select = 2
-            else:
-                player_select = 1
-            update_player_select(old_select,player_select)
+        if menu_page == 0:
+            options = ("1 PLAYER","2 PLAYERS")
+        elif menu_page == 1:
+            options = ("WHITE","BLACK")
+        else:
+            options = ("EASY","MEDIUM","HARD")
+
+        option_count = len(options)
+
+        if key == KEY_UP or key == KEY_LEFT:
+            old_select = menu_select
+            menu_select = menu_select-1
+            if menu_select < 0:
+                menu_select = option_count-1
+            draw_menu_option(old_select,options[old_select],False,option_count)
+            draw_menu_option(menu_select,options[menu_select],True,option_count)
+        elif key == KEY_DOWN or key == KEY_RIGHT:
+            old_select = menu_select
+            menu_select = menu_select+1
+            if menu_select == option_count:
+                menu_select = 0
+            draw_menu_option(old_select,options[old_select],False,option_count)
+            draw_menu_option(menu_select,options[menu_select],True,option_count)
         elif key == KEY_ENTER:
-            if player_select == 1:
-                color_select = 0
-                color_menu = True
-                draw_color_screen()
-            else:
+            if menu_page == 0 and menu_select == 1:
                 player_count = 2
                 reset_game_state()
                 draw_initial_screen()
+            elif menu_page == 0:
+                menu_page = 1
+                menu_select = human_side
+                draw_current_menu()
+            elif menu_page == 1:
+                human_side = menu_select
+                ai_side = 1-human_side
+                menu_page = 2
+                menu_select = 1
+                draw_current_menu()
+            else:
+                apply_difficulty()
+                player_count = 1
+                reset_game_state()
+                draw_initial_screen()
         elif key == KEY_CLEAR:
-            running = False
+            if menu_page == 0:
+                running = False
+            elif menu_page == 1:
+                menu_page = 0
+                menu_select = 0
+                draw_current_menu()
+            else:
+                menu_page = 1
+                menu_select = human_side
+                draw_current_menu()
         continue
 
     # -------------------------
@@ -2375,15 +2289,18 @@ while running:
     # -------------------------
 
     if quit_confirm:
-        if key == KEY_ENTER:
+        if key == KEY_UP or key == KEY_LEFT or key == KEY_DOWN or key == KEY_RIGHT:
+            quit_select = 1-quit_select
+            draw_quit_choices()
+        elif key == KEY_ENTER and quit_select == 0:
             selected = None
             quit_confirm = False
             promotion_pending = False
             player_count = 0
-            color_menu = False
-            difficulty_menu = False
-            draw_player_select_screen()
-        elif key == KEY_CLEAR:
+            menu_page = 0
+            menu_select = 0
+            draw_current_menu()
+        elif key == KEY_CLEAR or key == KEY_ENTER:
             quit_confirm = False
             draw_status()
 
@@ -2394,19 +2311,17 @@ while running:
     if key == KEY_CLEAR and (winner != "" or stalemate):
         reset_game_state()
         player_count = 0
-        player_select = 1
-        difficulty_select = 1
-        difficulty_menu = False
-        color_select = 0
-        color_menu = False
+        menu_page = 0
+        menu_select = 0
         human_side = 0
         ai_side = 1
-        draw_player_select_screen()
+        draw_current_menu()
         continue
 
     # First CLEAR press only asks to return to the main menu.
     if key == KEY_CLEAR:
         quit_confirm = True
+        quit_select = 1
         draw_status()
         continue
 
@@ -2416,20 +2331,24 @@ while running:
 
     if promotion_pending:
         if key == KEY_LEFT:
+            old_select = promotion_index
             promotion_index = promotion_index-1
 
             if promotion_index < 0:
                 promotion_index = 3
 
-            draw_status()
+            draw_promotion_choice(old_select,False)
+            draw_promotion_choice(promotion_index,True)
 
         elif key == KEY_RIGHT:
+            old_select = promotion_index
             promotion_index = promotion_index+1
 
             if promotion_index > 3:
                 promotion_index = 0
 
-            draw_status()
+            draw_promotion_choice(old_select,False)
+            draw_promotion_choice(promotion_index,True)
 
         elif key == KEY_ENTER:
             choice = PROMOTION_CHOICES[promotion_index]
