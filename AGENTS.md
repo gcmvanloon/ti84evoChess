@@ -123,6 +123,9 @@ The build task creates `chess_evo_min.py` through temporary preprocessed and
 minified files and compile-checks the readable, preprocessed and minified
 sources before replacing the output. It reports preprocessing substitutions,
 folded indexed reads, AST node counts, final statement count and byte sizes.
+After a successful build it also appends a row to the committed
+`BUILD_METRICS.csv` when the build inputs or metrics differ from the latest
+record. Keep this history file append-only; do not rewrite past measurements.
 
 The required core minifier configuration is:
 

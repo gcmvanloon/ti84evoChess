@@ -37,11 +37,21 @@ See `PREPROCESSOR.md` for the constant policy, pass architecture and validation
 requirements.
 
 The build overwrites `chess_evo_min.py`, compile-checks the readable,
-preprocessed, and minified sources, and prints their byte counts. Edit only
-`chess_evo.py`; treat the minified file as generated output. Literal hoisting
-is disabled because measurements showed it adds parser nodes and statements,
-which is a poor trade on the Evo-T. The core minifier settings are
-`hoist_literals=False`, `rename_locals=True`, and `rename_globals=True`.
+preprocessed, and minified sources, and prints their byte counts. After every
+successful build it records bytes, AST nodes and statements for all three
+stages in `BUILD_METRICS.csv`. A repeated build with identical inputs and
+metrics is not added again. When a previous record exists, the build prints
+the change in minified bytes, AST nodes and statements. The input fingerprint
+also covers the preprocessor, metrics recorder, build script, Python version
+request and pinned requirements so tool or configuration changes create a new
+record even when `chess_evo.py` is unchanged.
+
+Commit `BUILD_METRICS.csv`; it is the compact numerical history of successful
+builds, while Git history identifies the source change responsible for each
+entry. Edit only `chess_evo.py`; treat the minified file as generated output.
+Literal hoisting is disabled because measurements showed it adds parser nodes
+and statements, which is a poor trade on the Evo-T. The core minifier settings
+are `hoist_literals=False`, `rename_locals=True`, and `rename_globals=True`.
 Function argument names are automatically passed through `preserve_locals`.
 Without that setting, local renaming introduces short aliases for arguments to
 preserve keyword-call compatibility; those assignments save bytes but add

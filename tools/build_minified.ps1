@@ -6,6 +6,10 @@ $minifier = Join-Path $projectRoot ".venv\Scripts\pyminify.exe"
 $source = Join-Path $projectRoot "chess_evo.py"
 $output = Join-Path $projectRoot "chess_evo_min.py"
 $preprocessor = Join-Path $projectRoot "tools\ast_preprocessor.py"
+$metricsRecorder = Join-Path $projectRoot "tools\build_metrics.py"
+$metricsHistory = Join-Path $projectRoot "BUILD_METRICS.csv"
+$pythonVersionFile = Join-Path $projectRoot ".python-version"
+$requirements = Join-Path $projectRoot "requirements-dev.txt"
 $preprocessedOutput = Join-Path $projectRoot "chess_evo_preprocessed.py.tmp"
 $temporaryOutput = Join-Path $projectRoot "chess_evo_min.py.tmp"
 
@@ -64,6 +68,19 @@ try {
     $minifiedAstMetrics = & $python -c $astMetrics $output
     Write-Host "Built chess_evo_min.py: $outputBytes bytes from $preprocessedBytes preprocessed bytes ($savedPercent% smaller than $sourceBytes readable bytes)."
     Write-Host "Minified structure: $minifiedAstMetrics."
+
+    # Record one row for each distinct successful build. Including all files
+    # that control generated output makes the input hash useful across tool and
+    # configuration changes, not only chess_evo.py edits.
+    & $python $metricsRecorder `
+        --history $metricsHistory `
+        --source $source `
+        --preprocessed $preprocessedOutput `
+        --minified $output `
+        --inputs $source $preprocessor $metricsRecorder $PSCommandPath $pythonVersionFile $requirements
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to record build metrics."
+    }
 }
 finally {
     if (Test-Path -LiteralPath $preprocessedOutput) {
