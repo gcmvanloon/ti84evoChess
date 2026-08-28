@@ -1,10 +1,7 @@
-# TI-84 EVO-T CHESS v96
-# v9.6 - knight silhouette reshaped from simplified horse-head reference
+# TI-84 EVO-T CHESS
 #
 # Configuration selects calculator features before the remaining source is
-# optimized and minified. Minimax depth, alpha-beta pruning, evaluation and
-# randomness are unchanged.
-# Optimized redraw version
+# optimized and minified.
 #
 # ARROWS = move cursor
 # ENTER  = select / move
@@ -71,7 +68,7 @@ KEY_DOWN  = const(34)
 KEY_CLEAR = const(45)
 KEY_ENTER = const(105)
 if build_feature("debug_panel"):
-    KEY_TRACE = 14
+    KEY_TRACE = const(14)
 KEY_DEL   = const(23)
 
 BOARD_X = const(115)
@@ -177,8 +174,6 @@ if build_choice("piece_style","graphical"):
 
 
     def draw_pawn(px,py,white_piece):
-        # Same v92 pawn silhouette, expressed as relative coordinates so the
-        # function has much less syntax for MicroPython to parse and compile.
         fill = WHITE_RGB if white_piece else BLACK_RGB
         outline = BLACK_RGB if white_piece else WHITE_RGB
         xs = (7,9,11,11,10,9,9,11,13,14,1,2,4,6,6,5,4,4,6,7)
@@ -191,7 +186,6 @@ if build_choice("piece_style","graphical"):
 
 
     def draw_rook(px,py,white_piece):
-        # Same v92 rook silhouette.
         fill = WHITE_RGB if white_piece else BLACK_RGB
         outline = BLACK_RGB if white_piece else WHITE_RGB
         xs = (1,4,4,6,6,10,10,12,12,15,15,13,12,12,14,15,1,2,4,4,3,1,1)
@@ -220,7 +214,7 @@ if build_choice("piece_style","graphical"):
 
 
     def draw_bishop(px,py,white_piece):
-        # Same v92 bishop: round finial, compact body/cut and flat pedestal.
+        # Compact body/cut and flat pedestal.
         sy = py + SHAPE_Y_FIX
         fill = WHITE_RGB if white_piece else BLACK_RGB
         outline = BLACK_RGB if white_piece else WHITE_RGB
@@ -248,7 +242,7 @@ if build_choice("piece_style","graphical"):
 
 
     def draw_queen(px,py,white_piece):
-        # Same v92 queen silhouette: detached finial, crown, and king-style base.
+        # queen silhouette: crown, and king-style base.
         sy = py + SHAPE_Y_FIX
         fill = WHITE_RGB if white_piece else BLACK_RGB
         outline = BLACK_RGB if white_piece else WHITE_RGB
@@ -267,7 +261,7 @@ if build_choice("piece_style","graphical"):
 
 
     def draw_king(px,py,white_piece,checked):
-        # Same v92 king silhouette. CHECK changes only the fill color.
+        # king silhouette. CHECK changes only the fill color.
         fill = WHITE_RGB if white_piece else BLACK_RGB
         outline = BLACK_RGB if white_piece else WHITE_RGB
         if checked:
@@ -451,7 +445,7 @@ def draw_piece(x,y):
 
 
 def draw_tile_highlight(x,y,color):
-    # The ONLY drawing path for yellow, cyan and green board highlights.
+    # The ONLY drawing path for yellow, cyan board highlights.
     # x,y are tile coordinates: 0,0 upper-left through 7,7 lower-right.
     # The highlight occupies the outer edge of the 18x18 tile, while pieces
     # remain confined to the inner 16x16 area.
