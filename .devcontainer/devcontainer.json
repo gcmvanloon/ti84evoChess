@@ -4,6 +4,12 @@
         "dockerfile": "Dockerfile",
         "context": ".."
     },
+    "runArgs": [
+        "--security-opt=seccomp=unconfined"
+    ],
+    "mounts": [
+        "source=ti84evochess-vscode-home,target=/home/vscode,type=volume"
+    ],
     "remoteUser": "vscode",
     "customizations": {
         "vscode": {

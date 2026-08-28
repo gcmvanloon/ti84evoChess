@@ -12,6 +12,11 @@ RUN apt-get update \
     && groupadd --gid ${USER_GID} ${USERNAME} \
     && useradd --uid ${USER_UID} --gid ${USER_GID} --create-home \
         --shell /bin/bash ${USERNAME} \
+    # Docker copies this ownership into the newly-created persistent home
+    # volume, so VS Code can bootstrap its server as the non-root user.
+    && mkdir -p /home/${USERNAME}/.vscode-server/bin \
+        /home/${USERNAME}/.vscode-server/data \
+    && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME} \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-dev.txt /tmp/ti84-chess-requirements.txt
