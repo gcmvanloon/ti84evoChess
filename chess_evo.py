@@ -77,6 +77,7 @@ PIECE_VALUES = {
 # Defaults. One-player difficulty selection overrides these values.
 AI_DEPTH = 3
 AI_RANDOMNESS = 1
+AI_SCORE_MARGIN = 0
 OPENING_SAFETY_MARGIN = 30
 
 # Evaluation values use centipawn-like units. They are deliberately
@@ -935,16 +936,19 @@ def draw_current_menu():
 
 
 def apply_difficulty():
-    global AI_DEPTH, AI_RANDOMNESS
+    global AI_DEPTH, AI_RANDOMNESS, AI_SCORE_MARGIN
     if menu_select == 0:
         AI_DEPTH = 1
         AI_RANDOMNESS = 6
+        AI_SCORE_MARGIN = 100
     elif menu_select == 1:
         AI_DEPTH = 2
         AI_RANDOMNESS = 3
+        AI_SCORE_MARGIN = 40
     else:
         AI_DEPTH = 3
         AI_RANDOMNESS = 1
+        AI_SCORE_MARGIN = 0
 
 
 def reset_game_state():
@@ -2047,14 +2051,21 @@ def is_opening_development_move(side,move):
 
 
 def choose_ranked_move(scored,maximizing):
-    # AI_RANDOMNESS selects a top-N window. Exact ties at the window edge
-    # remain eligible, so Hard can still vary between genuinely equal moves
-    # without ever accepting a lower score.
+    # Randomize within both the top-N window and the difficulty's score
+    # margin. Exact ties at the window edge remain eligible.
     limit = AI_RANDOMNESS
     if limit > len(scored):
         limit = len(scored)
 
     cutoff = scored[limit-1][1]
+    if maximizing:
+        margin_cutoff = scored[0][1]-AI_SCORE_MARGIN
+        if margin_cutoff > cutoff:
+            cutoff = margin_cutoff
+    else:
+        margin_cutoff = scored[0][1]+AI_SCORE_MARGIN
+        if margin_cutoff < cutoff:
+            cutoff = margin_cutoff
     candidates = []
 
     for item in scored:
@@ -2088,6 +2099,10 @@ def find_best_move(depth=AI_DEPTH,side=1):
             promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
             state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,0)
             score = minimax(depth-1,alpha,beta,0,1)
+            # Easy does not search the reply, so cheaply penalize leaving the
+            # moved piece where White can capture it on the next turn.
+            if depth == 1 and is_square_attacked(target>>3,target&7,0):
+                score = score-AI_PIECE_VALUES[board[target>>3][target&7].lower()]
             undo_move(state)
             scored.append((move,score))
             if score > best_score:
@@ -2118,6 +2133,8 @@ def find_best_move(depth=AI_DEPTH,side=1):
         promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
         state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,0)
         score = minimax(depth-1,alpha,beta,1,1)
+        if depth == 1 and is_square_attacked(target>>3,target&7,1):
+            score = score+AI_PIECE_VALUES[board[target>>3][target&7].lower()]
         undo_move(state)
         scored.append((move,score))
         if score < best_score:
