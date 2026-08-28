@@ -10,6 +10,7 @@
 # ARROWS = move cursor
 # ENTER  = select / move
 # CLEAR  = back / menu
+# TRACE  = toggle debug panel
 #
 # The entire board is drawn only once.
 # Afterwards only changed squares are redrawn.
@@ -18,6 +19,7 @@
 import ti_draw
 import ti_system
 import random
+import gc
 
 # Thin pen for tile highlights.
 ti_draw.set_pen("thin","solid")
@@ -48,6 +50,7 @@ KEY_RIGHT = 26
 KEY_DOWN  = 34
 KEY_CLEAR = 45
 KEY_ENTER = 105
+KEY_TRACE = 14
 
 BOARD_X = 115
 BOARD_Y = 26
@@ -297,6 +300,7 @@ menu_select = 0
 human_side = 0
 ai_side = 1
 thinking = False
+debug_panel = False
 
 message = "SELECT PIECE"
 winner = ""
@@ -511,40 +515,43 @@ def draw_starting_pieces():
         for x in range(8):
             draw_piece(x,y)
 
-def draw_left_panel():
-    # Repaint the COMPLETE left panel in one solid block.
-    # This is intentionally drawn before all left-side text so
-    # no old white erase rectangles can remain visible.
-    ti_draw.set_color(
-        UI_BG[0],
-        UI_BG[1],
-        UI_BG[2]
-    )
-
-    # Logical y=18 maps to screen y=0 because of SHAPE_Y_FIX.
-    # Height 210 covers the complete ti_draw area.
-    fill_rect_at(
-        0,
-        18,
-        LEFT_PANEL_W,
-        210
-    )
-
-    # Preserve a visual boundary between the status panel and the board area.
+def draw_panel_separator():
+    # Static game-screen chrome. Panel fills stop at x=99, so view changes do
+    # not overwrite this divider at x=100.
     ti_draw.set_color(0,0,0)
     ti_draw.draw_line(LEFT_PANEL_W,0,LEFT_PANEL_W,209)
 
-    # Static text must be redrawn after painting the background.
+
+def draw_status_panel_frame():
+    # The title and key hint belong to the status view, but are static while
+    # that view remains active.
+    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
+    fill_rect_at(0,18,LEFT_PANEL_W-1,209)
+    draw_rect_at(0,18,LEFT_PANEL_W-1,209)
+    ti_draw.set_color(0,0,0)
     ti_draw.draw_text(5,26,"CHESS")
     ti_draw.draw_text(5,153,"CLEAR")
-    if quit_confirm:
-        ti_draw.draw_text(5,169,"CANCEL")
-    else:
-        ti_draw.draw_text(5,169,"MENU")
+    ti_draw.draw_text(5,169,"MENU")
 
-def draw_status():
-    # Put the blue-gray panel on top of any previous left-side drawing.
-    draw_left_panel()
+
+def clear_status_content():
+    # Clear only the changing middle of the status view. Screen rows above 45
+    # contain the title; rows from 153 down contain the static key hint.
+    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
+    fill_rect_at(0,45,LEFT_PANEL_W,108)
+
+def draw_status_panel():
+    global debug_panel
+
+    # Routine status changes stay hidden while debugging. Only an interactive
+    # prompt takes priority and switches back to the complete status view.
+    if debug_panel:
+        if not (quit_confirm or winner or stalemate or promotion_pending):
+            return
+        debug_panel = False
+        draw_status_panel_frame()
+    else:
+        clear_status_content()
 
     if quit_confirm:
         ti_draw.set_color(0,0,0)
@@ -616,6 +623,25 @@ def draw_status():
         ti_draw.draw_text(5,119,"MOVE")
     else:
         ti_draw.draw_text(5,103,message)
+
+
+def draw_debug_panel_frame():
+    # Debug owns every row of the complete left panel.
+    ti_draw.set_color(240,165,70)
+    fill_rect_at(0,18,LEFT_PANEL_W-1,209)
+    draw_rect_at(0,18,LEFT_PANEL_W-1,209)
+    ti_draw.set_color(0,60,170)
+    ti_draw.draw_text(5,26,"DEBUG")
+    ti_draw.draw_text(5,101,"FREE")
+    ti_draw.draw_text(5,117,str(gc.mem_free()))
+
+
+def draw_debug_key(key):
+    ti_draw.set_color(240,165,70)
+    fill_rect_at(4,45,91,42)
+    ti_draw.set_color(0,60,170)
+    ti_draw.draw_text(5,53,"KEY")
+    ti_draw.draw_text(5,69,str(key))
 
 
 def draw_game_over_popup():
@@ -963,7 +989,7 @@ def reset_game_state():
     global black_castle_k, black_castle_q
     global en_passant_x, en_passant_y
     global white_captures, black_captures
-    global thinking
+    global thinking, debug_panel
     global human_side, ai_side
 
     board = [
@@ -992,6 +1018,7 @@ def reset_game_state():
     quit_confirm = False
     check_turn = -1
     thinking = False
+    debug_panel = False
 
     promotion_pending = False
     promotion_x = -1
@@ -1081,12 +1108,12 @@ def perform_ai_move(move):
     if captured_piece == "K":
         winner = "WHITE"
         check_turn = -1
-        draw_status()
+        draw_status_panel()
         return
     if captured_piece == "k":
         winner = "BLACK"
         check_turn = -1
-        draw_status()
+        draw_status_panel()
         return
 
     turn = human_side
@@ -1105,7 +1132,7 @@ def perform_ai_move(move):
             stalemate = True
 
     message = "SELECT PIECE"
-    draw_status()
+    draw_status_panel()
 
 
 def draw_initial_screen():
@@ -1141,7 +1168,9 @@ def draw_initial_screen():
             str(8-y)
         )
 
-    draw_status()
+    draw_status_panel_frame()
+    draw_status_panel()
+    draw_panel_separator()
     draw_captures()
     draw_score()
     draw_moves()
@@ -2294,7 +2323,7 @@ while running:
             menu_select = 0
             draw_current_menu()
         else:
-            draw_status()
+            draw_status_panel()
         continue
 
     # -------------------------
@@ -2331,7 +2360,7 @@ while running:
 
         if choice == KEY_CLEAR:
             quit_confirm = True
-            draw_status()
+            draw_status_panel()
             continue
 
         promotion_index = choice
@@ -2393,14 +2422,14 @@ while running:
                 stalemate = True
 
         message = "SELECT PIECE"
-        draw_status()
+        draw_status_panel()
         continue
 
     # In one-player mode the AI owns its selected side. No key input is read
     # while minimax is running.
     if player_count == 1 and turn == ai_side:
         thinking = True
-        draw_status()
+        draw_status_panel()
         ai_move = find_best_move(AI_DEPTH,ai_side)
         thinking = False
         perform_ai_move(ai_move)
@@ -2408,10 +2437,23 @@ while running:
 
     key = wait_for_key()
 
+    if debug_panel and key != KEY_TRACE:
+        draw_debug_key(key)
+
     # First CLEAR press only asks to return to the main menu.
     if key == KEY_CLEAR:
         quit_confirm = True
-        draw_status()
+        draw_status_panel()
+        continue
+
+    if key == KEY_TRACE:
+        if debug_panel:
+            debug_panel = False
+            draw_status_panel_frame()
+            draw_status_panel()
+        else:
+            debug_panel = True
+            draw_debug_panel_frame()
         continue
 
     # -------------------------
@@ -2478,22 +2520,22 @@ while running:
 
             if selected_piece == ".":
                 message = "NO PIECE"
-                draw_status()
+                draw_status_panel()
 
             elif turn == 0 and not is_white(selected_piece):
                 message = "NOT YOURS"
-                draw_status()
+                draw_status_panel()
 
             elif turn == 1 and not is_black(selected_piece):
                 message = "NOT YOURS"
-                draw_status()
+                draw_status_panel()
 
             else:
                 selected = (cursor_x,cursor_y)
                 message = "SELECT TARGET"
 
                 draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
-                draw_status()
+                draw_status_panel()
 
         # Piece already selected.
         else:
@@ -2508,13 +2550,13 @@ while running:
                 message = "SELECT PIECE"
 
                 draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
-                draw_status()
+                draw_status_panel()
 
             elif (target != "." and
                   same_color(selected_piece,target)):
 
                 message = "OWN PIECE"
-                draw_status()
+                draw_status_panel()
 
             elif not is_valid(
                 selected_piece,
@@ -2525,7 +2567,7 @@ while running:
                 target
             ):
                 message = "ILLEGAL MOVE"
-                draw_status()
+                draw_status_panel()
 
             elif would_leave_king_in_check(
                 turn,
@@ -2536,7 +2578,7 @@ while running:
             ):
                 # You may not expose your own king or ignore CHECK.
                 message = "ILLEGAL MOVE"
-                draw_status()
+                draw_status_panel()
 
             else:
                 # Remember source before clearing selection.
@@ -2629,7 +2671,7 @@ while running:
                         move_count = move_count+1
                         draw_moves()
                     check_turn = -1
-                    draw_status()
+                    draw_status_panel()
 
                 elif (selected_piece == "p" and move_y == 0) or \
                      (selected_piece == "P" and move_y == 7):
@@ -2642,7 +2684,7 @@ while running:
                     promotion_side = turn
                     promotion_index = 0
 
-                    draw_status()
+                    draw_status_panel()
 
                 else:
                     # Remember the previous visual CHECK state.
@@ -2684,6 +2726,6 @@ while running:
                             stalemate = True
 
                     message = "SELECT PIECE"
-                    draw_status()
+                    draw_status_panel()
 
 ti_draw.clear()
