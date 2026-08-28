@@ -75,9 +75,7 @@ tree = SelectBuildFeaturesPass(profile).run(tree)
 Both files live in `tools/` because they are parts of the same desktop build
 tool. When Python runs `tools/ast_preprocessor.py`, its containing `tools/`
 directory is available for sibling imports, so no generic `modules/` directory
-is needed. `build_profiles.py` also exposes a small CLI for the profile metrics
-workflow, but that does not change its normal role as an imported preprocessing
-support module.
+is needed.
 
 ## Pass 1: `SelectBuildFeaturesPass`
 
@@ -389,7 +387,7 @@ Every preprocessing run reports:
 
 - constants processed;
 - reads substituted;
-- indexed reads folded; and
+- indexed reads folded;
 - single-use functions inlined; and
 - AST nodes before and after the complete pass pipeline.
 
@@ -440,13 +438,6 @@ Run the normal default-profile build:
 bash tools/build_minified.sh
 ```
 
-Measure one configured profile without replacing `chess_evo_min.py`:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\measure_profile.ps1 -Profile release
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\measure_profile.ps1 -Profile debug
-```
-
 ## Validation workflow
 
 After changing markers, profiles, pass behavior, or minifier interaction:
@@ -454,10 +445,9 @@ After changing markers, profiles, pass behavior, or minifier interaction:
 1. add or update focused regression tests;
 2. run the preprocessor tests;
 3. run the normal build;
-4. run the relevant profile metrics task when comparison data is wanted;
-5. inspect generated source for disabled-feature and marker residue;
-6. review substitutions, folds, nodes, statements, and bytes; and
-7. test affected generated profiles on a physical TI-84 Evo-T.
+4. inspect generated source for disabled-feature and marker residue;
+5. compare the labeled nodes, statements, and bytes in build output; and
+6. test affected generated profiles on a physical TI-84 Evo-T.
 
 Desktop compilation cannot validate Evo-T parser memory, graphics behavior,
 or runtime performance. Hardware testing remains required.

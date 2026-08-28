@@ -76,7 +76,8 @@ pyminify "$preprocessed_output" \
     --preserve-locals "$preserved_locals" \
     --remove-literal-statements \
     --prefer-single-line \
-    --no-hoist-literals
+    --no-hoist-literals \
+    >/dev/null
 
 # Parse and compile without importing the calculator-only ti_* modules.
 compile_check="import sys; compile(open(sys.argv[1],encoding='utf-8').read(),sys.argv[1],'exec')"
@@ -87,5 +88,5 @@ python -c "$compile_check" "$temporary_output"
 mv -f -- "$temporary_output" "$output_file"
 
 python -c \
-    "import ast,pathlib,sys; source=pathlib.Path(sys.argv[1]); preprocessed=pathlib.Path(sys.argv[2]); output=pathlib.Path(sys.argv[3]); source_bytes=source.stat().st_size; preprocessed_bytes=preprocessed.stat().st_size; output_bytes=output.stat().st_size; saved=round((1-output_bytes/source_bytes)*100,1); tree=ast.parse(output.read_text(encoding='utf-8')); print(f'Built {output.name}: {output_bytes} bytes from {preprocessed_bytes} preprocessed bytes ({saved:g}% smaller than {source_bytes} readable bytes).'); print(f'Minified structure: {sum(1 for _ in ast.walk(tree))} AST nodes, {sum(isinstance(node,ast.stmt) for node in ast.walk(tree))} statements.')" \
+    "import ast,pathlib,sys; source=pathlib.Path(sys.argv[1]); preprocessed=pathlib.Path(sys.argv[2]); output=pathlib.Path(sys.argv[3]); source_bytes=source.stat().st_size; preprocessed_bytes=preprocessed.stat().st_size; output_bytes=output.stat().st_size; saved=round((1-output_bytes/source_bytes)*100,1); tree=ast.parse(output.read_text(encoding='utf-8')); nodes=tuple(ast.walk(tree)); print(f'Build output: {output.name}'); print('Build metrics:'); print(f'  Readable bytes: {source_bytes:,}'); print(f'  Preprocessed bytes: {preprocessed_bytes:,}'); print(f'  Minified bytes: {output_bytes:,}'); print(f'  Size reduction: {saved:g}%'); print(f'  Minified AST nodes: {len(nodes):,}'); print(f'  Minified statements: {sum(isinstance(node,ast.stmt) for node in nodes):,}')" \
     "$source_file" "$preprocessed_output" "$output_file"

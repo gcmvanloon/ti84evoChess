@@ -115,8 +115,6 @@ The build task creates `chess_evo_min.py` through temporary preprocessed and
 minified files and compile-checks the readable, preprocessed and minified
 sources before replacing the output. It reports preprocessing substitutions,
 folded indexed reads, AST node counts, final statement count and byte sizes.
-The legacy PowerShell metrics-history workflow is not part of the Dev
-Container build and remains pending separate removal.
 
 The required core minifier configuration is:
 

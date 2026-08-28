@@ -53,10 +53,6 @@ Without that setting, local renaming introduces short aliases for arguments to
 preserve keyword-call compatibility; those assignments save bytes but add
 significant AST/compiler pressure. Non-argument locals are still renamed.
 
-The legacy PowerShell metrics-history workflow and CSV files are intentionally
-not part of the Dev Container build. They remain unchanged pending their
-separate removal.
-
 ## Other development commands
 
 Run the preprocessor with arbitrary input and output paths:

@@ -39,13 +39,8 @@ generated and ignored, and AST complexity matters more than source bytes alone.
 - Do not configure a separate debug-panel `enabled` value. The panel is a
   derived feature and is enabled automatically when one or more of its metrics
   resolve to true.
-- The normal build processes only its selected profile and does not append
-  build metrics.
-- Use one explicit metrics task per profile that is intentionally measured.
-  The initial tasks are **release metrics** and **debug metrics**; there is no
-  aggregate "measure all profiles" task.
-- Keep the existing `BUILD_METRICS.csv` unchanged as legacy, pre-profile
-  history. Do not rename it, rewrite it, or append profile builds to it.
+- The normal build processes only its selected profile and prints its metrics
+  directly. Build output is the comparison mechanism; no CSV history is kept.
 
 ## Configuration shape
 
@@ -130,8 +125,8 @@ Fail before preprocessing with a clear property path and message when:
   supported nested configuration.
 
 Restrict profile names to a filesystem-safe, documented form, such as lowercase
-ASCII letters, digits, underscores, and hyphens. This makes command-line use and
-metrics filenames deterministic.
+ASCII letters, digits, underscores, and hyphens. This keeps command-line use
+predictable.
 
 Use strict duplicate-key detection when loading JSON. Python's default JSON
 object behavior silently keeps the last duplicate, which is unsuitable for a
@@ -298,8 +293,7 @@ profile explicitly to the build script. Each task must:
 3. validate and resolve only the selected profile;
 4. preprocess, minify, and compile-check that profile;
 5. write `chess_evo_min.py` atomically through the existing workflow;
-6. print selected configuration plus byte and AST metrics; and
-7. never append a build-metrics CSV row.
+6. print selected configuration plus clearly labeled byte and AST metrics.
 
 Support an explicit terminal override such as:
 
@@ -312,50 +306,13 @@ The build script may still use `default_profile` when invoked directly without
 must process only one profile. It is the fast, intermittent development path
 for the selected profile.
 
-## Metrics workflow
+## Build metrics
 
-Add separate **release metrics** and **debug metrics** VS Code tasks backed by
-one checked-in profile-specific script. **release metrics** passes `release`
-explicitly and **debug metrics** passes `debug` explicitly. Each task must:
-
-1. load `build_profiles.json` and strictly validate the selected profile;
-2. run the complete preprocessing, minification, and compile-check workflow for
-   that profile;
-3. measure source, preprocessed, and minified bytes, AST nodes, and statements;
-4. append the result only to that profile's history using the existing
-   distinct-build behavior; and
-5. use temporary generated output so `chess_evo_min.py` is not replaced.
-
-A profile metrics task must not build another profile or read, append, or
-rewrite another profile's history. Add another explicit task when a future
-profile needs routine measurement; do not restore aggregate enumeration.
-
-The terminal equivalents are:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\measure_profile.ps1 -Profile release
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\measure_profile.ps1 -Profile debug
-```
-
-Metrics histories use:
-
-```text
-BUILD_METRICS_RELEASE.csv
-BUILD_METRICS_DEBUG.csv
-BUILD_METRICS_<NORMALIZED_PROFILE>.csv
-```
-
-Normalize a validated profile name deterministically to uppercase and replace
-hyphens with underscores. Do not add a profile column; the filename scopes the
-history.
-
-The metrics fingerprint must cover the source, preprocessor, metrics code,
-build scripts, Python version request, pinned requirements,
-`build_profiles.json`, and selected profile. Configuration or tool changes must
-remain reproducible even if the resulting output metrics happen to match.
-
-Leave `BUILD_METRICS.csv` untouched as legacy history. New profile-aware builds
-must neither append to it nor reinterpret its rows as belonging to a profile.
+Each normal build prints the selected profile and preprocessing results,
+followed by readable, preprocessed, and minified byte counts, size reduction,
+minified AST nodes, and minified statements. Each metric is printed on its own
+labeled line so results can be compared directly between builds. The project
+does not store a separate metrics history.
 
 ## Incremental implementation plan
 
@@ -374,12 +331,10 @@ change.
      calls, unknown features, and complete marker removal.
    - Verify the feature pass runs before constant inlining.
 
-3. **Build and metrics separation**
-   - Make the normal build select one profile and stop recording history.
-   - Add the shared profile-specific metrics script and explicit release/debug
-     VS Code tasks; do not add an aggregate measurement task.
-   - Start new per-profile histories only when their builds are implemented and
-     stable enough to measure.
+3. **Profile-specific builds**
+   - Make the normal build select one profile.
+   - Add explicit release/debug VS Code build tasks.
+   - Print labeled structural and size metrics for direct comparison.
 
 4. **Piece-style variant**
    - Preserve the existing graphical implementation exactly when selected.
@@ -417,20 +372,16 @@ Add focused desktop tests at each milestone. At minimum, cover:
 - independent capture/material combinations;
 - every debug metric alone and in useful combinations;
 - conditional undo integrations;
-- deterministic profile-specific metrics filenames;
-- normal builds not changing metrics files;
-- each metrics task changing only its selected profile history; and
-- metrics builds not changing `chess_evo_min.py`.
+- normal builds selecting and reporting only the requested profile; and
+- successful builds replacing `chess_evo_min.py` only after validation.
 
 For every calculator-code milestone:
 
 1. run the preprocessor regression tests;
 2. run the normal default-profile build;
-3. run the relevant profile metrics tasks when comparison data is
-   intentionally wanted;
-4. review generated code for disabled-feature residue;
-5. compare bytes, AST nodes, and statements by profile; and
-6. test affected profiles on a physical TI-84 Evo-T.
+3. review generated code for disabled-feature residue;
+4. compare labeled bytes, AST nodes, and statements in build output; and
+5. test affected profiles on a physical TI-84 Evo-T.
 
 Desktop success does not validate Evo-T parser memory, graphics behavior, or
 performance. Hardware validation remains mandatory before treating a profile

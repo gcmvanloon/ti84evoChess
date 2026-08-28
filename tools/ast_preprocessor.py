@@ -1062,22 +1062,21 @@ def main() -> int:
     except ProfileError as error:
         parser.error(str(error))
     enabled = ", ".join(profile.enabled_features) or "none"
-    print(
-        f"Build profile: {profile.name}; piece style: {profile.piece_style}; "
-        f"enabled features: {enabled}."
-    )
+    print("Build profile:")
+    print(f"  Name: {profile.name}")
+    print(f"  Piece style: {profile.piece_style}")
+    print(f"  Enabled features: {enabled}")
     output, stats = preprocess(source, str(arguments.input), profile)
     write_atomic(arguments.output, output)
     before_nodes = sum(1 for _ in ast.walk(ast.parse(source)))
     after_nodes = sum(1 for _ in ast.walk(ast.parse(output)))
-    print(
-        f"Preprocessed {arguments.input.name}: "
-        f"{stats.constant_count} constants, "
-        f"{stats.replacement_count} reads, "
-        f"{stats.folded_subscript_count} indexed reads folded, "
-        f"{stats.inlined_function_count} functions inlined, "
-        f"{before_nodes} -> {after_nodes} AST nodes."
-    )
+    print(f"Preprocessor metrics for {arguments.input.name}:")
+    print(f"  Constants processed: {stats.constant_count:,}")
+    print(f"  Reads substituted: {stats.replacement_count:,}")
+    print(f"  Indexed reads folded: {stats.folded_subscript_count:,}")
+    print(f"  Functions inlined: {stats.inlined_function_count:,}")
+    print(f"  Readable AST nodes: {before_nodes:,}")
+    print(f"  Preprocessed AST nodes: {after_nodes:,}")
     return 0
 
 

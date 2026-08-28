@@ -3,7 +3,6 @@ import unittest
 
 from build_profiles import (
     ProfileError,
-    metrics_filename,
     parse_profile_document,
     resolve_profile,
 )
@@ -119,9 +118,8 @@ class BuildProfileTests(unittest.TestCase):
         self.assertEqual(resolve_profile(parsed).name, "release")
         self.assertEqual(resolve_profile(parsed, "debug").name, "debug")
 
-    def test_profile_names_and_metrics_filenames_are_deterministic(self):
+    def test_profile_names_are_validated(self):
         with self.assertRaisesRegex(ProfileError, "profile name"):
             parse_profile_document(
                 '{"default_profile":"Bad Name","profiles":{"Bad Name":{}}}'
             )
-        self.assertEqual(metrics_filename("small-debug"), "BUILD_METRICS_SMALL_DEBUG.csv")

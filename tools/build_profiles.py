@@ -203,10 +203,6 @@ def load_resolved_profile(path: Path, name: str | None = None) -> ResolvedProfil
     return resolve_profile(load_profile_document(path), name)
 
 
-def metrics_filename(profile_name: str) -> str:
-    return "BUILD_METRICS_" + profile_name.upper().replace("-", "_") + ".csv"
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path)
