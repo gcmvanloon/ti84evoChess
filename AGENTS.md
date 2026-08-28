@@ -155,6 +155,25 @@ Safe techniques:
 - shorten project-owned identifiers;
 - alias frequently used `ti_draw` calls when beneficial.
 
+### Readable-source simplifications
+
+Keep straightforward structural optimizations in `chess_evo.py` rather than
+adding AST passes for them:
+
+- use `+=` and `-=` for numeric counters, coordinates and scores instead of
+  repeating the target in `value = value + ...` or `value = value - ...`;
+- when a value is guaranteed to be one character, prefer membership such as
+  `piece in "pP"` over repeated equality tests such as
+  `piece == "p" or piece == "P"`; do not use this rewrite when an empty or
+  multi-character string is possible because string-membership semantics then
+  differ;
+- use container truth tests such as `if not moves` instead of
+  `if len(moves) == 0` when only emptiness matters.
+
+These forms are both readable and structurally smaller, so future changes
+should use them directly in the source of truth. As with every optimization,
+retain a more explicit form if it is required to preserve semantics.
+
 Do not use naive text replacement. Protect:
 
 - keyword arguments such as `sort(key=...)`;

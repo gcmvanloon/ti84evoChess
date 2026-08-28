@@ -511,7 +511,7 @@ def draw_empty_board():
                 SQUARE+1,
                 SQUARE+1
             )
-            x = x+2
+            x += 2
 
 def draw_starting_pieces():
     # draw_empty_board() creates a completely clean board first. Only after
@@ -584,7 +584,7 @@ def draw_status_panel():
 
         while i < 4:
             draw_promotion_choice(i,PROMOTION_CHOICES[i],i == promotion_index,4)
-            i = i + 1
+            i += 1
 
         ti_draw.set_color(0,0,0)
         ti_draw.draw_text(5,111,"ENTER")
@@ -762,7 +762,7 @@ def draw_capture_column(x,captures,white_piece):
                 str(count)
             )
 
-            row = row + 1
+            row += 1
 
 def draw_captures(side=-1):
     # A move changes only the capturing player's column. side=-1 is the
@@ -803,9 +803,9 @@ def update_material_state():
                 value = PIECE_VALUES[kind]
 
                 if is_white(piece):
-                    white_score = white_score + value
+                    white_score += value
                 else:
-                    black_score = black_score + value
+                    black_score += value
 
 def record_capture(captured_piece,side):
     # If the remaining pieces plus earlier captures already account for all
@@ -821,12 +821,12 @@ def record_capture(captured_piece,side):
     for row in board:
         for piece in row:
             if piece == captured_piece:
-                count = count+1
+                count += 1
 
     if count+captures[kind] >= start_count:
-        captures["p"] = captures["p"]+1
+        captures["p"] += 1
     else:
-        captures[kind] = captures[kind]+1
+        captures[kind] += 1
 
 def save_active_cursor():
     global white_cursor, black_cursor
@@ -924,7 +924,7 @@ def draw_menu_screen(title,choices,selected,back_text):
     i = 0
     while i < len(choices):
         draw_setup_option(i,choices[i],i == selected,len(choices))
-        i = i+1
+        i += 1
 
     ti_draw.set_color(0,0,0)
     ti_draw.draw_text(48,178,"ARROWS: MOVE")
@@ -949,11 +949,11 @@ def choose_option(selected,choices,draw_option):
         old = selected
 
         if key == KEY_UP or key == KEY_LEFT:
-            selected = selected-1
+            selected -= 1
             if selected < 0:
                 selected = count-1
         elif key == KEY_DOWN or key == KEY_RIGHT:
-            selected = selected+1
+            selected += 1
             if selected == count:
                 selected = 0
         elif key == KEY_ENTER:
@@ -1070,7 +1070,7 @@ def perform_ai_move(move):
     old_check_turn = check_turn
     state = make_move(y1,x1,y2,x2,ai_side,True,promotion)
     if ai_side == 1:
-        move_count = move_count+1
+        move_count += 1
 
     captured_piece = state[6]
     capture_y = state[7]
@@ -1204,8 +1204,8 @@ def path_clear(y1,x1,y2,x2):
         if board[y][x] != ".":
             return False
 
-        x = x + step_x
-        y = y + step_y
+        x += step_x
+        y += step_y
 
     return True
 
@@ -1261,7 +1261,7 @@ def is_valid(p,y1,x1,y2,x2,target):
         return False
 
     # Knight
-    if p == "n" or p == "N":
+    if p in "nN":
         if dx == 1 and dy == 2:
             return True
         if dx == 2 and dy == 1:
@@ -1269,7 +1269,7 @@ def is_valid(p,y1,x1,y2,x2,target):
         return False
 
     # King
-    if p == "k" or p == "K":
+    if p in "kK":
         # Normal king move
         if dx <= 1 and dy <= 1:
             return True
@@ -1287,7 +1287,7 @@ def is_valid(p,y1,x1,y2,x2,target):
         return False
 
     # Rook
-    if p == "r" or p == "R":
+    if p in "rR":
         if x1 == x2 or y1 == y2:
             return path_clear(
                 y1,x1,y2,x2
@@ -1295,7 +1295,7 @@ def is_valid(p,y1,x1,y2,x2,target):
         return False
 
     # Bishop
-    if p == "b" or p == "B":
+    if p in "bB":
         if dx == dy:
             return path_clear(
                 y1,x1,y2,x2
@@ -1303,7 +1303,7 @@ def is_valid(p,y1,x1,y2,x2,target):
         return False
 
     # Queen
-    if p == "q" or p == "Q":
+    if p in "qQ":
         if x1 == x2 or y1 == y2 or dx == dy:
             return path_clear(
                 y1,x1,y2,x2
@@ -1343,7 +1343,7 @@ def attacks_square(p,y1,x1,y2,x2):
         return dx == 1 and y2 == y1+1
 
     # Knight
-    if p == "n" or p == "N":
+    if p in "nN":
         if dx == 1 and dy == 2:
             return True
         if dx == 2 and dy == 1:
@@ -1351,23 +1351,23 @@ def attacks_square(p,y1,x1,y2,x2):
         return False
 
     # King
-    if p == "k" or p == "K":
+    if p in "kK":
         return dx <= 1 and dy <= 1
 
     # Rook
-    if p == "r" or p == "R":
+    if p in "rR":
         if x1 == x2 or y1 == y2:
             return path_clear(y1,x1,y2,x2)
         return False
 
     # Bishop
-    if p == "b" or p == "B":
+    if p in "bB":
         if dx == dy:
             return path_clear(y1,x1,y2,x2)
         return False
 
     # Queen
-    if p == "q" or p == "Q":
+    if p in "qQ":
         if x1 == x2 or y1 == y2 or dx == dy:
             return path_clear(y1,x1,y2,x2)
         return False
@@ -1504,13 +1504,13 @@ def would_leave_king_in_check(
 
     # Detect special moves before modifying the board.
     is_castle = (
-        (p == "k" or p == "K") and
+        p in "kK" and
         y1 == y2 and
         abs(x2-x1) == 2
     )
 
     is_en_passant = (
-        (p == "p" or p == "P") and
+        p in "pP" and
         target == "." and
         abs(x2-x1) == 1 and
         x2 == en_passant_x and
@@ -1606,8 +1606,8 @@ def make_move(y1,x1,y2,x2,side,update_material=True,promotion_piece=None,search_
     else:
         old_ep = en_passant_x + en_passant_y*8
 
-    castling_move = ((p == "k" or p == "K") and y1 == y2 and abs(x2-x1) == 2)
-    en_passant_move = ((p == "p" or p == "P") and target == "." and
+    castling_move = (p in "kK" and y1 == y2 and abs(x2-x1) == 2)
+    en_passant_move = (p in "pP" and target == "." and
                        abs(x2-x1) == 1 and x2 == en_passant_x and y2 == en_passant_y)
 
     captured_piece = target
@@ -1675,7 +1675,7 @@ def make_move(y1,x1,y2,x2,side,update_material=True,promotion_piece=None,search_
 
     en_passant_x = -1
     en_passant_y = -1
-    if (p == "p" or p == "P") and abs(y2-y1) == 2:
+    if p in "pP" and abs(y2-y1) == 2:
         en_passant_x = x1
         en_passant_y = (y1+y2)//2
 
@@ -1797,8 +1797,8 @@ def append_sliding_moves(moves,side,y1,x1,directions):
             append_legal_move(moves,side,y1,x1,y2,x2)
             if target != ".":
                 break
-            y2 = y2 + dy
-            x2 = x2 + dx
+            y2 += dy
+            x2 += dx
 
 
 def get_legal_moves(side):
@@ -1835,8 +1835,8 @@ def get_legal_moves(side):
                     while dx <= 1:
                         if dx != 0 or dy != 0:
                             append_legal_move(moves,side,y1,x1,y1+dy,x1+dx)
-                        dx = dx + 1
-                    dy = dy + 1
+                        dx += 1
+                    dy += 1
                 append_legal_move(moves,side,y1,x1,y1,x1-2)
                 append_legal_move(moves,side,y1,x1,y1,x1+2)
     return moves
@@ -1854,16 +1854,16 @@ def move_order_score(move):
     target = board[y2][x2]
     score = 0
     captured = target
-    if captured == "." and (p == "p" or p == "P") and x1 != x2:
+    if captured == "." and p in "pP" and x1 != x2:
         if x2 == en_passant_x and y2 == en_passant_y:
             captured = board[y1][x2]
     if captured != ".":
-        score = score + AI_PIECE_VALUES[captured.lower()]*10
-        score = score - AI_PIECE_VALUES[p.lower()]
+        score += AI_PIECE_VALUES[captured.lower()]*10
+        score -= AI_PIECE_VALUES[p.lower()]
     if promotion:
-        score = score + AI_PIECE_VALUES[PROMOTION_CHOICES[promotion-1]]*10
+        score += AI_PIECE_VALUES[PROMOTION_CHOICES[promotion-1]]*10
     if p.lower() == "k" and abs(x2-x1) == 2:
-        score = score + 50
+        score += 50
     return score
 
 
@@ -1875,9 +1875,9 @@ def order_moves(moves):
         j = i-1
         while j >= 0 and move_order_score(moves[j]) < score:
             moves[j+1] = moves[j]
-            j = j-1
+            j -= 1
         moves[j+1] = move
-        i = i+1
+        i += 1
 
 def evaluate_board():
     # Positive = good for black (the AI).
@@ -1907,9 +1907,9 @@ def evaluate_board():
                 black_king = True
 
             if p == "b":
-                white_bishops = white_bishops + 1
+                white_bishops += 1
             elif p == "B":
-                black_bishops = black_bishops + 1
+                black_bishops += 1
 
             value = AI_PIECE_VALUES[lower]
             center = AI_CENTER_TABLE[y*8+x]
@@ -1928,9 +1928,9 @@ def evaluate_board():
             elif lower == "p":
                 # Reward central pawns and safe advancement.
                 if x == 3 or x == 4:
-                    positional = positional + 8
+                    positional += 8
                 elif x == 2 or x == 5:
-                    positional = positional + 3
+                    positional += 3
 
                 if is_black(p):
                     advancement = y-1
@@ -1938,16 +1938,16 @@ def evaluate_board():
                     advancement = 6-y
 
                 if advancement > 0:
-                    positional = positional + advancement*3
+                    positional += advancement*3
 
             elif lower == "k":
                 # Mild preference against wandering into the centre.
                 positional = -center*3
 
             if is_black(p):
-                score = score + value + positional
+                score += value + positional
             else:
-                score = score - value - positional
+                score -= value + positional
 
     # The current game also permits king capture, so handle that state
     # safely even though normal chess search should end at checkmate.
@@ -1960,37 +1960,37 @@ def evaluate_board():
     # Development: reward knights and bishops for leaving their original
     # squares. Fixed-square checks are much cheaper than generating moves.
     if board[7][1] != "n":
-        score = score - AI_DEVELOPMENT_BONUS
+        score -= AI_DEVELOPMENT_BONUS
     if board[7][6] != "n":
-        score = score - AI_DEVELOPMENT_BONUS
+        score -= AI_DEVELOPMENT_BONUS
     if board[7][2] != "b":
-        score = score - AI_DEVELOPMENT_BONUS
+        score -= AI_DEVELOPMENT_BONUS
     if board[7][5] != "b":
-        score = score - AI_DEVELOPMENT_BONUS
+        score -= AI_DEVELOPMENT_BONUS
 
     if board[0][1] != "N":
-        score = score + AI_DEVELOPMENT_BONUS
+        score += AI_DEVELOPMENT_BONUS
     if board[0][6] != "N":
-        score = score + AI_DEVELOPMENT_BONUS
+        score += AI_DEVELOPMENT_BONUS
     if board[0][2] != "B":
-        score = score + AI_DEVELOPMENT_BONUS
+        score += AI_DEVELOPMENT_BONUS
     if board[0][5] != "B":
-        score = score + AI_DEVELOPMENT_BONUS
+        score += AI_DEVELOPMENT_BONUS
 
     # King safety: a king on c/g after castling gets a small bonus.
     if board[7][2] == "k" or board[7][6] == "k":
-        score = score - AI_CASTLED_BONUS
+        score -= AI_CASTLED_BONUS
 
     if board[0][2] == "K" or board[0][6] == "K":
-        score = score + AI_CASTLED_BONUS
+        score += AI_CASTLED_BONUS
 
     # Bishop pair is a useful positional signal and nearly free because
     # bishop counts were gathered during the normal material scan.
     if white_bishops >= 2:
-        score = score - AI_BISHOP_PAIR_BONUS
+        score -= AI_BISHOP_PAIR_BONUS
 
     if black_bishops >= 2:
-        score = score + AI_BISHOP_PAIR_BONUS
+        score += AI_BISHOP_PAIR_BONUS
 
     return score
 
@@ -2005,7 +2005,7 @@ def minimax(depth,alpha,beta,side,ply=1):
     if depth <= 0:
         return evaluate_board()
     moves = get_legal_moves(side)
-    if len(moves) == 0:
+    if not moves:
         if is_in_check(side):
             if side == 0:
                 return AI_MATE_SCORE + depth
@@ -2117,7 +2117,7 @@ def choose_ranked_move(scored,maximizing):
 
 def find_best_move(depth=AI_DEPTH,side=1):
     moves = get_legal_moves(side)
-    if len(moves) == 0:
+    if not moves:
         return None
     order_moves(moves)
     opening = opening_development_active(side)
@@ -2137,7 +2137,7 @@ def find_best_move(depth=AI_DEPTH,side=1):
             # moved piece where White can capture it on the next turn. Use
             # one third of its value so Easy accepts trades and modest risks.
             if depth == 1 and is_square_attacked(target>>3,target&7,0):
-                score = score-AI_PIECE_VALUES[board[target>>3][target&7].lower()]//3
+                score -= AI_PIECE_VALUES[board[target>>3][target&7].lower()]//3
             undo_move(state)
             scored.append((move,score))
             if score > best_score:
@@ -2169,7 +2169,7 @@ def find_best_move(depth=AI_DEPTH,side=1):
         state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,0)
         score = minimax(depth-1,alpha,beta,1,1)
         if depth == 1 and is_square_attacked(target>>3,target&7,1):
-            score = score+AI_PIECE_VALUES[board[target>>3][target&7].lower()]//3
+            score += AI_PIECE_VALUES[board[target>>3][target&7].lower()]//3
         undo_move(state)
         scored.append((move,score))
         if score < best_score:
@@ -2395,7 +2395,7 @@ while running:
 
         # Promotion completes the current player's move.
         if turn == 1:
-            move_count = move_count+1
+            move_count += 1
             draw_moves()
 
         if turn == 0:
@@ -2470,7 +2470,7 @@ while running:
             old_x = cursor_x
             old_y = cursor_y
 
-            cursor_x = cursor_x-1
+            cursor_x -= 1
 
             refresh_tile_highlight(old_x,old_y)
             draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
@@ -2481,7 +2481,7 @@ while running:
             old_x = cursor_x
             old_y = cursor_y
 
-            cursor_x = cursor_x+1
+            cursor_x += 1
 
             refresh_tile_highlight(old_x,old_y)
             draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
@@ -2492,7 +2492,7 @@ while running:
             old_x = cursor_x
             old_y = cursor_y
 
-            cursor_y = cursor_y-1
+            cursor_y -= 1
 
             refresh_tile_highlight(old_x,old_y)
             draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
@@ -2503,7 +2503,7 @@ while running:
             old_x = cursor_x
             old_y = cursor_y
 
-            cursor_y = cursor_y+1
+            cursor_y += 1
 
             refresh_tile_highlight(old_x,old_y)
             draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
@@ -2673,7 +2673,7 @@ while running:
 
                 if captured_king:
                     if turn == 1:
-                        move_count = move_count+1
+                        move_count += 1
                         draw_moves()
                     check_turn = -1
                     draw_status_panel()
@@ -2697,7 +2697,7 @@ while running:
 
                     # Give the turn to the other player.
                     if turn == 1:
-                        move_count = move_count+1
+                        move_count += 1
                         draw_moves()
 
                     if turn == 0:
