@@ -274,20 +274,16 @@ def draw_piece_shape(p,px,py,white_piece,checked=False):
 cursor_x = 4
 cursor_y = 6
 
-# Each human side remembers its own cursor position.
-white_cursor_x = 4
-white_cursor_y = 6
-black_cursor_x = 4
-black_cursor_y = 1
+# Each human side remembers its own cursor position as (x,y).
+white_cursor = (4,6)
+black_cursor = (4,1)
 
-# Last completed move highlight (AI in 1-player, every move in 2-player).
-last_ai_from_x = -1
-last_ai_from_y = -1
-last_ai_to_x = -1
-last_ai_to_y = -1
+# Last completed move as (from_x,from_y,to_x,to_y), or None.
+# This highlights AI moves in 1-player and every move in 2-player.
+last_move = None
 
-selected_x = -1
-selected_y = -1
+# Selected square as (x,y), or None.
+selected = None
 
 turn = 0
 # 0 = white
@@ -449,10 +445,10 @@ def refresh_tile_highlight(x,y):
 
     if x == cursor_x and y == cursor_y:
         draw_tile_highlight(x,y,(255,220,0))
-    elif x == selected_x and y == selected_y:
+    elif selected is not None and x == selected[0] and y == selected[1]:
         draw_tile_highlight(x,y,(0,200,255))
-    elif (x == last_ai_from_x and y == last_ai_from_y) or \
-         (x == last_ai_to_x and y == last_ai_to_y):
+    elif last_move is not None and ((x == last_move[0] and y == last_move[1]) or \
+         (x == last_move[2] and y == last_move[3])):
         draw_tile_highlight(x,y,(0,180,0))
 
 
@@ -765,15 +761,12 @@ def draw_captures():
     )
 
 def save_active_cursor():
-    global white_cursor_x, white_cursor_y
-    global black_cursor_x, black_cursor_y
+    global white_cursor, black_cursor
 
     if turn == 0:
-        white_cursor_x = cursor_x
-        white_cursor_y = cursor_y
+        white_cursor = (cursor_x,cursor_y)
     else:
-        black_cursor_x = cursor_x
-        black_cursor_y = cursor_y
+        black_cursor = (cursor_x,cursor_y)
 
 
 def switch_to_turn_cursor():
@@ -785,37 +778,29 @@ def switch_to_turn_cursor():
     # Switch the logical cursor first. Border restoration then knows that the
     # old square must no longer receive the yellow cursor frame.
     if turn == 0:
-        cursor_x = white_cursor_x
-        cursor_y = white_cursor_y
+        cursor_x, cursor_y = white_cursor
     else:
-        cursor_x = black_cursor_x
-        cursor_y = black_cursor_y
+        cursor_x, cursor_y = black_cursor
 
     refresh_tile_highlight(old_x,old_y)
     draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
 
 
 def clear_ai_move_highlight():
-    global last_ai_from_x, last_ai_from_y
-    global last_ai_to_x, last_ai_to_y
+    global last_move
 
-    old_from_x = last_ai_from_x
-    old_from_y = last_ai_from_y
-    old_to_x = last_ai_to_x
-    old_to_y = last_ai_to_y
+    old_move = last_move
 
     # Clear the state before refreshing the frames so they are no longer
     # interpreted as green-highlighted squares.
-    last_ai_from_x = -1
-    last_ai_from_y = -1
-    last_ai_to_x = -1
-    last_ai_to_y = -1
+    last_move = None
 
-    if old_from_x >= 0:
+    if old_move is not None:
+        old_from_x, old_from_y, old_to_x, old_to_y = old_move
         refresh_tile_highlight(old_from_x,old_from_y)
 
-    if old_to_x >= 0 and (old_to_x != old_from_x or old_to_y != old_from_y):
-        refresh_tile_highlight(old_to_x,old_to_y)
+        if old_to_x != old_from_x or old_to_y != old_from_y:
+            refresh_tile_highlight(old_to_x,old_to_y)
 
 
 def draw_menu_choice(text_x,text_y,text,selected,r,g,b):
@@ -949,11 +934,8 @@ def apply_difficulty():
 
 def reset_game_state():
     global board, cursor_x, cursor_y
-    global white_cursor_x, white_cursor_y
-    global black_cursor_x, black_cursor_y
-    global last_ai_from_x, last_ai_from_y
-    global last_ai_to_x, last_ai_to_y
-    global selected_x, selected_y, turn, message
+    global white_cursor, black_cursor, last_move
+    global selected, turn, message
     global winner, stalemate, quit_confirm, check_turn
     global promotion_pending, promotion_x, promotion_y
     global promotion_side, promotion_index
@@ -976,22 +958,14 @@ def reset_game_state():
         ["r","n","b","q","k","b","n","r"]
     ]
 
-    white_cursor_x = 4
-    white_cursor_y = 6
-    black_cursor_x = 4
-    black_cursor_y = 1
+    white_cursor = (4,6)
+    black_cursor = (4,1)
     if player_count == 1 and human_side == 1:
-        cursor_x = black_cursor_x
-        cursor_y = black_cursor_y
+        cursor_x, cursor_y = black_cursor
     else:
-        cursor_x = white_cursor_x
-        cursor_y = white_cursor_y
-    last_ai_from_x = -1
-    last_ai_from_y = -1
-    last_ai_to_x = -1
-    last_ai_to_y = -1
-    selected_x = -1
-    selected_y = -1
+        cursor_x, cursor_y = white_cursor
+    last_move = None
+    selected = None
     turn = 0
     message = "SELECT PIECE"
     winner = ""
@@ -1024,8 +998,7 @@ def reset_game_state():
 def perform_ai_move(move):
     global turn, check_turn, winner, stalemate
     global message
-    global last_ai_from_x, last_ai_from_y
-    global last_ai_to_x, last_ai_to_y
+    global last_move
 
     if move is None:
         return
@@ -1053,10 +1026,7 @@ def perform_ai_move(move):
 
     # Store the new AI move, redraw only the changed interiors, then update
     # the two independent highlight frames explicitly.
-    last_ai_from_x = x1
-    last_ai_from_y = y1
-    last_ai_to_x = x2
-    last_ai_to_y = y2
+    last_move = (x1,y1,x2,y2)
 
     draw_square(x1,y1)
     draw_square(x2,y2)
@@ -2354,8 +2324,7 @@ while running:
 
     if quit_confirm:
         if key == KEY_ENTER:
-            selected_x = -1
-            selected_y = -1
+            selected = None
             quit_confirm = False
             promotion_pending = False
             player_count = 0
@@ -2539,7 +2508,7 @@ while running:
     elif key == KEY_ENTER:
 
         # No piece selected yet.
-        if selected_x < 0:
+        if selected is None:
             selected_piece = board[cursor_y][cursor_x]
 
             if selected_piece == ".":
@@ -2555,8 +2524,7 @@ while running:
                 draw_status()
 
             else:
-                selected_x = cursor_x
-                selected_y = cursor_y
+                selected = (cursor_x,cursor_y)
                 message = "SELECT TARGET"
 
                 draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
@@ -2564,15 +2532,14 @@ while running:
 
         # Piece already selected.
         else:
-            selected_piece = board[selected_y][selected_x]
+            selected_piece = board[selected[1]][selected[0]]
             target = board[cursor_y][cursor_x]
 
             # ENTER on same square = cancel.
-            if (cursor_x == selected_x and
-                cursor_y == selected_y):
+            if (cursor_x == selected[0] and
+                cursor_y == selected[1]):
 
-                selected_x = -1
-                selected_y = -1
+                selected = None
                 message = "SELECT PIECE"
 
                 draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
@@ -2586,8 +2553,8 @@ while running:
 
             elif not is_valid(
                 selected_piece,
-                selected_y,
-                selected_x,
+                selected[1],
+                selected[0],
                 cursor_y,
                 cursor_x,
                 target
@@ -2597,8 +2564,8 @@ while running:
 
             elif would_leave_king_in_check(
                 turn,
-                selected_y,
-                selected_x,
+                selected[1],
+                selected[0],
                 cursor_y,
                 cursor_x
             ):
@@ -2608,8 +2575,8 @@ while running:
 
             else:
                 # Remember source before clearing selection.
-                old_selected_x = selected_x
-                old_selected_y = selected_y
+                old_selected_x = selected[0]
+                old_selected_y = selected[1]
                 move_y = cursor_y
                 move_x = cursor_x
 
@@ -2618,10 +2585,7 @@ while running:
 
                 # In two-player mode every completed move is highlighted.
                 if player_count == 2:
-                    last_ai_from_x = old_selected_x
-                    last_ai_from_y = old_selected_y
-                    last_ai_to_x = move_x
-                    last_ai_to_y = move_y
+                    last_move = (old_selected_x,old_selected_y,move_x,move_y)
 
                 # Apply the move through the central move engine.
                 # The UI below only consumes the returned move details.
@@ -2657,8 +2621,7 @@ while running:
                     winner = "BLACK"
                     captured_king = True
 
-                selected_x = -1
-                selected_y = -1
+                selected = None
                 save_active_cursor()
 
                 # Redraw only the changed square interiors, then update their
