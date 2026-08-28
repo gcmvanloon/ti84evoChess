@@ -1,0 +1,4 @@
+.venv/
+__pycache__/
+*.pyc
+chess_evo_min.py

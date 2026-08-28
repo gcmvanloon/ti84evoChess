@@ -4,20 +4,24 @@ These instructions capture the constraints and decisions that future agents must
 
 > Target device is the **TI-84 Evo-T**, not the older TI-84 Plus CE / CE-T. Do not assume CE behavior or APIs apply unless verified on the Evo-T.
 
-## 1. Always produce two files
+## 1. Source of truth and generated test build
 
-For every iteration generate:
+`chess_evo.py` is the only source of truth:
 
-1. **Readable source**
-   - clear names and comments;
-   - intended for review and further editing.
+- keep it readable, with clear names and useful comments;
+- make all calculator-code changes there;
+- never hand-edit minified code.
 
-2. **Aggressively minified test build**
-   - we use a tool for minification
-   - intended for the calculator;
-   - must preserve identical behavior;
-   - identifier shortening must be collision-safe;
-   - never rename Python/library keyword arguments accidentally.
+`chess_evo_min.py` is the aggressively minified calculator test build:
+
+- generate it from `chess_evo.py` after every calculator-code iteration;
+- generate it only through the repository build task described below;
+- treat it as disposable output, not source;
+- do not commit it; it is intentionally listed in `.gitignore`;
+- require behavior identical to the readable source.
+
+The minified build has been run successfully on a physical TI-84 Evo-T using
+the automated workflow in this repository.
 
 ## 2. Memory is the main constraint
 
@@ -49,6 +53,48 @@ Optimize for **simple Python structure**, not only source bytes.
 
 ## 3. Minification rules
 
+Minification is automated with `python-minifier`, pinned in
+`requirements-dev.txt`. Python is managed by `uv`, with the requested version
+stored in `.python-version` and the project environment stored in `.venv`.
+
+One-time setup, or recovery after `.venv` is removed:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\setup_minifier.ps1
+```
+
+In VS Code, the equivalent task is **Chess: setup minifier**. It downloads the
+managed Python runtime when needed, creates `.venv`, and synchronizes the
+pinned tools. System Python and pip are not required.
+
+Generate the calculator build with the default VS Code build task
+(`Ctrl+Shift+B`), named **Chess: build minified**, or run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1
+```
+
+The build task creates `chess_evo_min.py` through a temporary file and
+compile-checks both readable and minified sources before replacing the output.
+It also reports the source size, output size, and percentage reduction.
+
+The required core minifier configuration is:
+
+```python
+hoist_literals = False
+rename_locals = True
+rename_globals = True
+```
+
+The CLI expresses this with `--no-hoist-literals` and `--rename-globals`.
+Local renaming is enabled by default in the pinned `python-minifier` version;
+the CLI only exposes the inverse `--no-rename-locals` switch. Keep these
+settings centralized in `tools/build_minified.ps1`.
+
+Literal hoisting was measured on this project and rejected: it saved some
+source bytes but added globals, statements, and AST nodes, increasing the kind
+of parser/compiler pressure that matters on the Evo-T.
+
 Safe techniques:
 
 - remove comments/docstrings;
@@ -64,6 +110,12 @@ Do not use naive text replacement. Protect:
 - attributes;
 - strings;
 - Python syntax.
+
+Use the AST-aware minifier rather than implementing manual identifier
+replacement. Do not invoke `pyminify` ad hoc with different options and do not
+post-process `chess_evo_min.py` by hand. If minifier settings or the pinned
+version change, compare output size and syntax/AST complexity, then revalidate
+the result on the physical calculator.
 
 ### Bitboards
 
@@ -280,6 +332,11 @@ Avoid `input()` because it does not fit the graphical UI.
 
 ## 12. Validation
 
+The repository build task automatically compile-checks `chess_evo.py` and
+`chess_evo_min.py` without importing the calculator-only `ti_*` modules. A
+successful build is the minimum desktop validation for every calculator-code
+change.
+
 Desktop tests are useful for:
 
 - syntax errors;
@@ -295,7 +352,9 @@ They do **not** reproduce Evo-T:
 - graphics performance;
 - LCD appearance.
 
-Final validation must happen on the real calculator.
+Final validation must happen on the real calculator. The current pinned
+minifier workflow and settings have passed that hardware check, but future code
+or tool changes still require calculator testing.
 
 If a build fails with `MemoryError` before gameplay starts, first suspect parser/compiler footprint rather than the AI or drawing-time allocations.
 
@@ -317,7 +376,7 @@ Avoid unless measured on the Evo-T:
 
 ## 14. Preferred workflow
 
-For every change:
+For every calculator-code change:
 
 1. start from the latest readable source;
 2. change only the requested subsystem;
@@ -325,10 +384,19 @@ For every change:
 4. keep piece graphics inside 16×16;
 5. preserve incremental redraws and highlight separation;
 6. favor fewer Python constructs and fewer graphics calls;
-7. generate readable + minified versions;
-8. compile-check both;
-9. compare minified size and, when memory is tight, syntax/AST complexity;
-10. test the minified build on the actual Evo-T.
+7. run **Chess: setup minifier** only if `.venv` or its pinned tools are missing;
+8. run **Chess: build minified** to regenerate and compile-check
+   `chess_evo_min.py`;
+9. review the reported minified size and, when memory is tight, compare
+   statement count, identifier count, and AST complexity;
+10. upload the generated `chess_evo_min.py` to the calculator and test it on the
+    actual Evo-T; *(This is a manual step performed by a human.)*
+11. commit the readable source and workflow changes, but not the ignored
+    generated minified file.
+
+See `BUILDING.md` for the concise operator instructions. Agents should execute
+the same checked-in scripts a human uses; do not reproduce minification in a
+prompt or maintain a separate hand-minified version.
 
 Core principle:
 
