@@ -1,0 +1,122 @@
+name: Build and publish release
+
+run-name: Release calculator build for ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - chess_evo.py
+      - build_profiles.json
+      - tools/**
+
+# Do not cancel an older build when significant commits are pushed close
+# together: every matching commit should receive its own release.
+concurrency:
+  group: calculator-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build calculator program
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the source commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.6"
+          enable-cache: true
+
+      - name: Create Python environment
+        shell: bash
+        run: uv venv --python "$(tr -d '[:space:]' < .python-version)" .venv
+
+      - name: Install the pinned minifier
+        shell: bash
+        run: uv pip sync --python ./.venv/bin/python requirements-dev.txt
+
+      - name: Compile-check the readable source
+        shell: bash
+        run: |
+          ./.venv/bin/python -c \
+            "compile(open('chess_evo.py',encoding='utf-8').read(),'chess_evo.py','exec')"
+
+      - name: Preprocess the release profile
+        shell: bash
+        run: |
+          ./.venv/bin/python tools/ast_preprocessor.py \
+            chess_evo.py \
+            chess_evo_preprocessed.py.tmp \
+            --config build_profiles.json \
+            --profile release
+
+      - name: Compile-check the preprocessed program
+        shell: bash
+        run: |
+          ./.venv/bin/python -c \
+            "compile(open('chess_evo_preprocessed.py.tmp',encoding='utf-8').read(),'chess_evo_preprocessed.py.tmp','exec')"
+
+      - name: Minify the preprocessed program
+        shell: bash
+        run: |
+          preserved_locals="$(
+            ./.venv/bin/python -c \
+              "import ast,sys; tree=ast.parse(open(sys.argv[1],encoding='utf-8').read()); print(','.join(sorted({node.arg for node in ast.walk(tree) if isinstance(node,ast.arg)})))" \
+              chess_evo_preprocessed.py.tmp
+          )"
+          ./.venv/bin/pyminify chess_evo_preprocessed.py.tmp \
+            --output chess_evo_min.py \
+            --rename-globals \
+            --preserve-locals "$preserved_locals" \
+            --remove-literal-statements \
+            --prefer-single-line \
+            --no-hoist-literals
+
+      - name: Report build metrics
+        shell: bash
+        run: |
+          ./.venv/bin/python -c \
+            "import ast,pathlib; path=pathlib.Path('chess_evo_min.py'); data=path.read_bytes(); tree=ast.parse(data.decode('utf-8')); print(f'Built {path.name}: {len(data)} bytes, {sum(1 for _ in ast.walk(tree))} AST nodes, {sum(isinstance(node,ast.stmt) for node in ast.walk(tree))} statements.')"
+
+      - name: Save the calculator program for the publish job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: calculator-build
+          path: chess_evo_min.py
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download the calculator program
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: calculator-build
+          path: release-assets
+
+      - name: Create versioned release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: v0.${{ github.run_number }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            ./release-assets/chess_evo_min.py \
+            --target "$GITHUB_SHA" \
+            --title "TI-84 Evo-T Chess $RELEASE_TAG" \
+            --generate-notes \
+            --latest
