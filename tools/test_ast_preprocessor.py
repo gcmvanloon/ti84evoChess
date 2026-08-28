@@ -95,6 +95,40 @@ class SelectBuildFeaturesTests(unittest.TestCase):
         self.assertNotIn("KEY_TRACE", release)
         self.assertNotIn("build_feature", release)
 
+    def test_chess_source_keeps_only_selected_piece_style(self):
+        source_path = Path(__file__).resolve().parent.parent / "chess_evo.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        graphical, _ = preprocess(
+            source, str(source_path), profile(piece_style="graphical")
+        )
+        self.assertIn("def draw_pawn", graphical)
+        self.assertIn("def draw_offset_fill_poly", graphical)
+        self.assertNotIn("ti_draw.draw_text(px + 4, py, p)", graphical)
+
+        glyphs, _ = preprocess(
+            source, str(source_path), profile(piece_style="glyphs")
+        )
+        self.assertNotIn("def draw_pawn", glyphs)
+        self.assertNotIn("def draw_offset_fill_poly", glyphs)
+        self.assertNotIn("WHITE_RGB", glyphs)
+        self.assertIn("ti_draw.draw_text(px + 4, py, p)", glyphs)
+
+        tree = ast.parse(glyphs)
+        renderer = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "draw_piece_shape"
+        )
+        draw_text_calls = [
+            node
+            for node in ast.walk(renderer)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "draw_text"
+        ]
+        self.assertEqual(len(draw_text_calls), 1)
+
 
 class InlineConstantsTests(unittest.TestCase):
     def execute(self, source):

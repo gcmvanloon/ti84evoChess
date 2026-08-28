@@ -108,7 +108,7 @@ is represented by this shortened example:
       "features": {}
     },
     "debug": {
-      "piece_style": "graphical",
+      "piece_style": "glyphs",
       "features": {
         "debug_panel": {
           "metrics": {

@@ -6,7 +6,7 @@
       "features": {}
     },
     "debug": {
-      "piece_style": "graphical",
+      "piece_style": "glyphs",
       "features": {
         "debug_panel": {
           "metrics": {

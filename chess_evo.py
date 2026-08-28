@@ -14,7 +14,7 @@
 #
 # The entire board is drawn only once.
 # Afterwards only changed squares are redrawn.
-# All six chess pieces now use compact primitive renderers.
+# The release style uses compact primitive renderers; debug can select glyphs.
 
 import ti_draw
 import ti_system
@@ -57,11 +57,12 @@ board = [
 WHITE = const("prnbqk")
 BLACK = const("PRNBQK")
 
-# Piece colors are shared by all six renderers. Player 1 uses a white fill
-# with a black outline; player 2 uses the reverse.
-WHITE_RGB = const((255,255,255))
-BLACK_RGB = const((0,0,0))
-CHECK_RGB = const((220,0,0))
+if build_choice("piece_style","graphical"):
+    # Player 1 uses a white fill with a black outline; player 2 uses the
+    # reverse. A checked king uses a red fill.
+    WHITE_RGB = const((255,255,255))
+    BLACK_RGB = const((0,0,0))
+    CHECK_RGB = const((220,0,0))
 
 KEY_LEFT  = const(24)
 KEY_UP    = const(25)
@@ -151,149 +152,159 @@ UI_BG = const((232,236,244))
 LEFT_PANEL_W = const(100)
 
 # ------------------------------------------------------------
-# SPECIALIZED CHESS PIECE DRAWING
+# CHESS PIECE DRAWING
 # ------------------------------------------------------------
-# All six pieces now use compact primitive-based silhouettes.
-# Relative coordinate tuples keep parser/compiler syntax complexity low.
-#
-# px,py is the top-left of the 16x16 colored tile interior. white_piece is
-# True for player 1 and False for player 2; the king also receives checked.
+# Exactly one build-time style remains in generated source. px,py is the
+# top-left of the 16x16 colored tile interior. white_piece is True for player 1
+# and False for player 2; the king also receives checked.
 
-def draw_offset_fill_poly(px,py,x_offsets,y_offsets):
-    # Offset helpers only translate the compact relative coordinates. Each
-    # piece renderer owns its color selection and drawing order.
-    sy = py + SHAPE_Y_FIX
-    xs = [px+i for i in x_offsets]
-    ys = [sy+i for i in y_offsets]
-    ti_draw.fill_poly(xs,ys)
-
-
-def draw_offset_poly(px,py,x_offsets,y_offsets):
-    sy = py + SHAPE_Y_FIX
-    xs = [px+i for i in x_offsets]
-    ys = [sy+i for i in y_offsets]
-    ti_draw.draw_poly(xs,ys)
+if build_choice("piece_style","graphical"):
+    def draw_offset_fill_poly(px,py,x_offsets,y_offsets):
+        # Offset helpers only translate the compact relative coordinates. Each
+        # piece renderer owns its color selection and drawing order.
+        sy = py + SHAPE_Y_FIX
+        xs = [px+i for i in x_offsets]
+        ys = [sy+i for i in y_offsets]
+        ti_draw.fill_poly(xs,ys)
 
 
-def draw_pawn(px,py,white_piece):
-    # Same v92 pawn silhouette, expressed as relative coordinates so the
-    # function has much less syntax for MicroPython to parse and compile.
-    fill = WHITE_RGB if white_piece else BLACK_RGB
-    outline = BLACK_RGB if white_piece else WHITE_RGB
-    xs = (7,9,11,11,10,9,9,11,13,14,1,2,4,6,6,5,4,4,6,7)
-    ys = (0,0,2,4,5,6,8,11,13,15,15,13,11,8,6,5,4,2,0,0)
-
-    ti_draw.set_color(fill[0],fill[1],fill[2])
-    draw_offset_fill_poly(px,py,xs,ys)
-    ti_draw.set_color(outline[0],outline[1],outline[2])
-    draw_offset_poly(px,py,xs,ys)
+    def draw_offset_poly(px,py,x_offsets,y_offsets):
+        sy = py + SHAPE_Y_FIX
+        xs = [px+i for i in x_offsets]
+        ys = [sy+i for i in y_offsets]
+        ti_draw.draw_poly(xs,ys)
 
 
-def draw_rook(px,py,white_piece):
-    # Same v92 rook silhouette.
-    fill = WHITE_RGB if white_piece else BLACK_RGB
-    outline = BLACK_RGB if white_piece else WHITE_RGB
-    xs = (1,4,4,6,6,10,10,12,12,15,15,13,12,12,14,15,1,2,4,4,3,1,1)
-    ys = (1,1,4,4,1,1,4,4,1,1,6,6,8,11,13,15,15,13,11,8,6,6,1)
+    def draw_pawn(px,py,white_piece):
+        # Same v92 pawn silhouette, expressed as relative coordinates so the
+        # function has much less syntax for MicroPython to parse and compile.
+        fill = WHITE_RGB if white_piece else BLACK_RGB
+        outline = BLACK_RGB if white_piece else WHITE_RGB
+        xs = (7,9,11,11,10,9,9,11,13,14,1,2,4,6,6,5,4,4,6,7)
+        ys = (0,0,2,4,5,6,8,11,13,15,15,13,11,8,6,5,4,2,0,0)
 
-    ti_draw.set_color(fill[0],fill[1],fill[2])
-    draw_offset_fill_poly(px,py,xs,ys)
-    ti_draw.set_color(outline[0],outline[1],outline[2])
-    draw_offset_poly(px,py,xs,ys)
-
-
-def draw_knight(px,py,white_piece):
-    # Simplified left-facing knight based on the reference silhouette. The
-    # forehead drops vertically into a long muzzle, the underside cuts back
-    # sharply into the neck, and the rear slopes down into a flat base.
-    # One closed polygon keeps both draw-call and parser overhead low.
-    fill = WHITE_RGB if white_piece else BLACK_RGB
-    outline = BLACK_RGB if white_piece else WHITE_RGB
-    xs = (6,6,1,3,9,9,6,5,14,13,12,10,6)
-    ys = (0,2,6,9,8,9,10,15,15,9,4,1,0)
-
-    ti_draw.set_color(fill[0],fill[1],fill[2])
-    draw_offset_fill_poly(px,py,xs,ys)
-    ti_draw.set_color(outline[0],outline[1],outline[2])
-    draw_offset_poly(px,py,xs,ys)
+        ti_draw.set_color(fill[0],fill[1],fill[2])
+        draw_offset_fill_poly(px,py,xs,ys)
+        ti_draw.set_color(outline[0],outline[1],outline[2])
+        draw_offset_poly(px,py,xs,ys)
 
 
-def draw_bishop(px,py,white_piece):
-    # Same v92 bishop: round finial, compact body/cut and flat pedestal.
-    sy = py + SHAPE_Y_FIX
-    fill = WHITE_RGB if white_piece else BLACK_RGB
-    outline = BLACK_RGB if white_piece else WHITE_RGB
-    body_x = (8,6,5,4,3,3,4,5,7,9,11,12,13,13,12,11,10,9,8)
-    body_y = (4,4,5,6,8,9,10,11,12,12,11,10,9,7,6,5,4,4,4)
-    base_x = (2,14,14,2,2)
-    base_y = (13,13,15,15,13)
+    def draw_rook(px,py,white_piece):
+        # Same v92 rook silhouette.
+        fill = WHITE_RGB if white_piece else BLACK_RGB
+        outline = BLACK_RGB if white_piece else WHITE_RGB
+        xs = (1,4,4,6,6,10,10,12,12,15,15,13,12,12,14,15,1,2,4,4,3,1,1)
+        ys = (1,1,4,4,1,1,4,4,1,1,6,6,8,11,13,15,15,13,11,8,6,6,1)
 
-    ti_draw.set_color(fill[0],fill[1],fill[2])
-    ti_draw.fill_circle(px+8,sy+2,2)
-    ti_draw.set_color(outline[0],outline[1],outline[2])
-    ti_draw.draw_circle(px+8,sy+2,2)
-
-    ti_draw.set_color(fill[0],fill[1],fill[2])
-    draw_offset_fill_poly(px,py,body_x,body_y)
-    ti_draw.set_color(outline[0],outline[1],outline[2])
-    draw_offset_poly(px,py,body_x,body_y)
-    ti_draw.draw_line(px+10,sy+5,px+7,sy+9)
-    ti_draw.draw_line(px+11,sy+5,px+8,sy+9)
-
-    ti_draw.set_color(fill[0],fill[1],fill[2])
-    draw_offset_fill_poly(px,py,base_x,base_y)
-    ti_draw.set_color(outline[0],outline[1],outline[2])
-    draw_offset_poly(px,py,base_x,base_y)
+        ti_draw.set_color(fill[0],fill[1],fill[2])
+        draw_offset_fill_poly(px,py,xs,ys)
+        ti_draw.set_color(outline[0],outline[1],outline[2])
+        draw_offset_poly(px,py,xs,ys)
 
 
-def draw_queen(px,py,white_piece):
-    # Same v92 queen silhouette: detached finial, crown, and king-style base.
-    sy = py + SHAPE_Y_FIX
-    fill = WHITE_RGB if white_piece else BLACK_RGB
-    outline = BLACK_RGB if white_piece else WHITE_RGB
-    xs = (2,3,5,6,8,10,11,13,14,15,14,11,13,14,2,3,5,2,1,2)
-    ys = (5,5,4,3,5,3,4,5,5,6,8,12,14,15,15,14,12,8,6,5)
+    def draw_knight(px,py,white_piece):
+        # Simplified left-facing knight based on the reference silhouette. The
+        # forehead drops vertically into a long muzzle, the underside cuts back
+        # sharply into the neck, and the rear slopes down into a flat base.
+        # One closed polygon keeps both draw-call and parser overhead low.
+        fill = WHITE_RGB if white_piece else BLACK_RGB
+        outline = BLACK_RGB if white_piece else WHITE_RGB
+        xs = (6,6,1,3,9,9,6,5,14,13,12,10,6)
+        ys = (0,2,6,9,8,9,10,15,15,9,4,1,0)
 
-    ti_draw.set_color(fill[0],fill[1],fill[2])
-    ti_draw.fill_circle(px+8,sy+1,1)
-    ti_draw.set_color(outline[0],outline[1],outline[2])
-    ti_draw.draw_circle(px+8,sy+1,1)
-
-    ti_draw.set_color(fill[0],fill[1],fill[2])
-    draw_offset_fill_poly(px,py,xs,ys)
-    ti_draw.set_color(outline[0],outline[1],outline[2])
-    draw_offset_poly(px,py,xs,ys)
+        ti_draw.set_color(fill[0],fill[1],fill[2])
+        draw_offset_fill_poly(px,py,xs,ys)
+        ti_draw.set_color(outline[0],outline[1],outline[2])
+        draw_offset_poly(px,py,xs,ys)
 
 
-def draw_king(px,py,white_piece,checked):
-    # Same v92 king silhouette. CHECK changes only the fill color.
-    fill = WHITE_RGB if white_piece else BLACK_RGB
-    outline = BLACK_RGB if white_piece else WHITE_RGB
-    if checked:
-        fill = CHECK_RGB
-    xs = (7,9,9,11,11,9,9,14,15,14,11,13,14,2,3,5,2,1,2,7,7,5,5,7,7)
-    ys = (0,0,2,2,4,4,5,5,6,8,12,14,15,15,14,12,8,6,5,5,4,4,2,2,0)
+    def draw_bishop(px,py,white_piece):
+        # Same v92 bishop: round finial, compact body/cut and flat pedestal.
+        sy = py + SHAPE_Y_FIX
+        fill = WHITE_RGB if white_piece else BLACK_RGB
+        outline = BLACK_RGB if white_piece else WHITE_RGB
+        body_x = (8,6,5,4,3,3,4,5,7,9,11,12,13,13,12,11,10,9,8)
+        body_y = (4,4,5,6,8,9,10,11,12,12,11,10,9,7,6,5,4,4,4)
+        base_x = (2,14,14,2,2)
+        base_y = (13,13,15,15,13)
 
-    ti_draw.set_color(fill[0],fill[1],fill[2])
-    draw_offset_fill_poly(px,py,xs,ys)
-    ti_draw.set_color(outline[0],outline[1],outline[2])
-    draw_offset_poly(px,py,xs,ys)
+        ti_draw.set_color(fill[0],fill[1],fill[2])
+        ti_draw.fill_circle(px+8,sy+2,2)
+        ti_draw.set_color(outline[0],outline[1],outline[2])
+        ti_draw.draw_circle(px+8,sy+2,2)
+
+        ti_draw.set_color(fill[0],fill[1],fill[2])
+        draw_offset_fill_poly(px,py,body_x,body_y)
+        ti_draw.set_color(outline[0],outline[1],outline[2])
+        draw_offset_poly(px,py,body_x,body_y)
+        ti_draw.draw_line(px+10,sy+5,px+7,sy+9)
+        ti_draw.draw_line(px+11,sy+5,px+8,sy+9)
+
+        ti_draw.set_color(fill[0],fill[1],fill[2])
+        draw_offset_fill_poly(px,py,base_x,base_y)
+        ti_draw.set_color(outline[0],outline[1],outline[2])
+        draw_offset_poly(px,py,base_x,base_y)
 
 
-def draw_piece_shape(p,px,py,white_piece,checked=False):
-    lower = p.lower()
-    if lower == "p":
-        draw_pawn(px,py,white_piece)
-    elif lower == "r":
-        draw_rook(px,py,white_piece)
-    elif lower == "n":
-        draw_knight(px,py,white_piece)
-    elif lower == "b":
-        draw_bishop(px,py,white_piece)
-    elif lower == "q":
-        draw_queen(px,py,white_piece)
-    elif lower == "k":
-        draw_king(px,py,white_piece,checked)
+    def draw_queen(px,py,white_piece):
+        # Same v92 queen silhouette: detached finial, crown, and king-style base.
+        sy = py + SHAPE_Y_FIX
+        fill = WHITE_RGB if white_piece else BLACK_RGB
+        outline = BLACK_RGB if white_piece else WHITE_RGB
+        xs = (2,3,5,6,8,10,11,13,14,15,14,11,13,14,2,3,5,2,1,2)
+        ys = (5,5,4,3,5,3,4,5,5,6,8,12,14,15,15,14,12,8,6,5)
+
+        ti_draw.set_color(fill[0],fill[1],fill[2])
+        ti_draw.fill_circle(px+8,sy+1,1)
+        ti_draw.set_color(outline[0],outline[1],outline[2])
+        ti_draw.draw_circle(px+8,sy+1,1)
+
+        ti_draw.set_color(fill[0],fill[1],fill[2])
+        draw_offset_fill_poly(px,py,xs,ys)
+        ti_draw.set_color(outline[0],outline[1],outline[2])
+        draw_offset_poly(px,py,xs,ys)
+
+
+    def draw_king(px,py,white_piece,checked):
+        # Same v92 king silhouette. CHECK changes only the fill color.
+        fill = WHITE_RGB if white_piece else BLACK_RGB
+        outline = BLACK_RGB if white_piece else WHITE_RGB
+        if checked:
+            fill = CHECK_RGB
+        xs = (7,9,9,11,11,9,9,14,15,14,11,13,14,2,3,5,2,1,2,7,7,5,5,7,7)
+        ys = (0,0,2,2,4,4,5,5,6,8,12,14,15,15,14,12,8,6,5,5,4,4,2,2,0)
+
+        ti_draw.set_color(fill[0],fill[1],fill[2])
+        draw_offset_fill_poly(px,py,xs,ys)
+        ti_draw.set_color(outline[0],outline[1],outline[2])
+        draw_offset_poly(px,py,xs,ys)
+
+
+    def draw_piece_shape(p,px,py,white_piece,checked=False):
+        lower = p.lower()
+        if lower == "p":
+            draw_pawn(px,py,white_piece)
+        elif lower == "r":
+            draw_rook(px,py,white_piece)
+        elif lower == "n":
+            draw_knight(px,py,white_piece)
+        elif lower == "b":
+            draw_bishop(px,py,white_piece)
+        elif lower == "q":
+            draw_queen(px,py,white_piece)
+        elif lower == "k":
+            draw_king(px,py,white_piece,checked)
+else:
+    def draw_piece_shape(p,px,py,white_piece,checked=False):
+        # One character from the board representation replaces every
+        # graphical silhouette. Case continues to distinguish the sides.
+        if checked:
+            ti_draw.set_color(220,0,0)
+        elif white_piece:
+            ti_draw.set_color(255,255,255)
+        else:
+            ti_draw.set_color(0,0,0)
+        ti_draw.draw_text(px+4,py,p)
 
 cursor_x = 4
 cursor_y = 6
@@ -906,8 +917,7 @@ def draw_text_choice(x,y,w,text,selected):
 
 
 def draw_promotion_choice(index,piece,selected,count):
-    # Promotion uses the same choice background, but keeps the native 16x16
-    # piece renderers instead of substituting text chess symbols.
+    # Promotion uses the same selected piece style as the board.
     x = 4 + index*22
     y = 82
     draw_choice_box(x,y,20,20,selected)
