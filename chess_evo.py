@@ -318,7 +318,8 @@ black_score = 0
 # Standard full moves completed; incremented after each black move.
 move_count = 0
 
-# Keys are always lowercase piece types.
+# Keys are lowercase piece types. Promoted pieces are recorded as pawns when
+# captured, without needing to track the identity of individual pieces.
 white_captures = {
     "p":0,
     "n":0,
@@ -663,14 +664,14 @@ def text_width(text):
     return len(text)*10-2
 
 def draw_score():
-    # The largest possible material lead is W+39/B+39 (four characters).
-    # Its 38-pixel text width needs 39 here because fill_rect() excludes
-    # the far edge.
+    # Promotions can make the material lead exceed the starting 39 points.
+    # Clear room for five characters such as W+103. The extra pixel
+    # compensates for fill_rect() excluding its far edge.
     ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
     fill_rect_at(
         BOARD_X,
         SCORE_Y-3,
-        39,
+        49,
         19
     )
 
@@ -718,7 +719,7 @@ def draw_moves():
     ti_draw.draw_text(tx,SCORE_Y,text)
 
 def draw_capture_column(x,captures,white_piece):
-    # Highest-value pieces first; only types that were actually captured.
+    # Highest-value captured pieces first.
     order = ["q","r","b","n","p"]
     row = 0
 
@@ -777,6 +778,46 @@ def draw_captures():
         black_captures,
         True
     )
+
+def update_material_state():
+    # Rebuild the material score from the pieces currently on the board.
+    global white_score, black_score
+
+    white_score = 0
+    black_score = 0
+
+    for row in board:
+        for piece in row:
+            kind = piece.lower()
+
+            if kind in PIECE_VALUES:
+                value = PIECE_VALUES[kind]
+
+                if is_white(piece):
+                    white_score = white_score + value
+                else:
+                    black_score = black_score + value
+
+def record_capture(captured_piece,side):
+    # If the remaining pieces plus earlier captures already account for all
+    # original pieces of this type, this capture must consume a promoted pawn.
+    kind = captured_piece.lower()
+    if kind == "k":
+        return
+
+    captures = white_captures if side == 0 else black_captures
+    start_count = 1 if kind == "q" else 8 if kind == "p" else 2
+    count = 0
+
+    for row in board:
+        for piece in row:
+            if piece == captured_piece:
+                count = count+1
+
+    if count+captures[kind] >= start_count:
+        captures["p"] = captures["p"]+1
+    else:
+        captures[kind] = captures[kind]+1
 
 def save_active_cursor():
     global white_cursor, black_cursor
@@ -955,8 +996,6 @@ def reset_game_state():
     promotion_side = -1
     promotion_index = 0
 
-    white_score = 0
-    black_score = 0
     move_count = 0
 
     white_castle_k = True
@@ -969,6 +1008,7 @@ def reset_game_state():
 
     white_captures = {"p":0,"n":0,"b":0,"r":0,"q":0}
     black_captures = {"p":0,"n":0,"b":0,"r":0,"q":0}
+    update_material_state()
 
 
 def perform_ai_move(move):
@@ -1028,7 +1068,7 @@ def perform_ai_move(move):
             y2
         )
 
-    if captured_piece != ".":
+    if captured_piece != "." or promotion is not None:
         draw_captures()
         draw_score()
     if ai_side == 1:
@@ -1508,16 +1548,12 @@ SEARCH_STATES = [[None]*14 for _ in range(4)]
 #  0 piece, 1 y1, 2 x1, 3 y2, 4 x2, 5 original target
 #  6 captured piece, 7 capture y, 8 capture x
 #  9 rook from x, 10 rook to x, 11 rook piece
-# 12..15 old castling rights
-# 16..17 old en-passant target
-# 18 old white score, 19 old black score
-# 20 capture side (-1 if none), 21 capture type, 22 old capture count
+# 12 packed old castling rights, 13 packed old en-passant target
 
-def make_move(y1,x1,y2,x2,side,update_score=True,promotion_piece=None,search_slot=0):
+def make_move(y1,x1,y2,x2,side,update_material=True,promotion_piece=None,search_slot=0):
     global white_castle_k, white_castle_q
     global black_castle_k, black_castle_q
     global en_passant_x, en_passant_y
-    global white_score, black_score
 
     p = board[y1][x1]
     target = board[y2][x2]
@@ -1532,10 +1568,6 @@ def make_move(y1,x1,y2,x2,side,update_score=True,promotion_piece=None,search_slo
     else:
         old_ep = en_passant_x + en_passant_y*8
 
-    if update_score:
-        old_white_score = white_score
-        old_black_score = black_score
-
     castling_move = ((p == "k" or p == "K") and y1 == y2 and abs(x2-x1) == 2)
     en_passant_move = ((p == "p" or p == "P") and target == "." and
                        abs(x2-x1) == 1 and x2 == en_passant_x and y2 == en_passant_y)
@@ -1547,26 +1579,6 @@ def make_move(y1,x1,y2,x2,side,update_score=True,promotion_piece=None,search_slo
     if en_passant_move:
         capture_y = y1
         captured_piece = board[capture_y][x2]
-
-    capture_side = -1
-    capture_type = "."
-    old_capture_count = 0
-
-    if update_score and captured_piece != ".":
-        capture_type = captured_piece.lower()
-        if capture_type in PIECE_VALUES:
-            value = PIECE_VALUES[capture_type]
-            capture_side = side
-            if side == 0:
-                white_score = white_score + value
-                if capture_type != "k":
-                    old_capture_count = white_captures[capture_type]
-                    white_captures[capture_type] = old_capture_count + 1
-            else:
-                black_score = black_score + value
-                if capture_type != "k":
-                    old_capture_count = black_captures[capture_type]
-                    black_captures[capture_type] = old_capture_count + 1
 
     if p == "k":
         white_castle_k = False
@@ -1629,8 +1641,14 @@ def make_move(y1,x1,y2,x2,side,update_score=True,promotion_piece=None,search_slo
         en_passant_x = x1
         en_passant_y = (y1+y2)//2
 
+    if update_material and captured_piece != ".":
+        record_capture(captured_piece,side)
+
+    if update_material and (captured_piece != "." or promotion_piece is not None):
+        update_material_state()
+
     # Search nodes reuse a fixed buffer instead of allocating a new list.
-    if not update_score:
+    if not update_material:
         state = SEARCH_STATES[search_slot]
         state[0]=p; state[1]=y1; state[2]=x1; state[3]=y2; state[4]=x2
         state[5]=target; state[6]=captured_piece; state[7]=capture_y; state[8]=capture_x
@@ -1639,15 +1657,13 @@ def make_move(y1,x1,y2,x2,side,update_score=True,promotion_piece=None,search_slo
         return state
 
     return [p,y1,x1,y2,x2,target,captured_piece,capture_y,capture_x,
-            rook_from_x,rook_to_x,rook_piece,old_castle_bits,old_ep,
-            old_white_score,old_black_score,capture_side,capture_type,old_capture_count]
+            rook_from_x,rook_to_x,rook_piece,old_castle_bits,old_ep]
 
 
 def undo_move(state):
     global white_castle_k, white_castle_q
     global black_castle_k, black_castle_q
     global en_passant_x, en_passant_y
-    global white_score, black_score
 
     p,y1,x1,y2,x2,target = state[0:6]
     captured_piece = state[6]
@@ -1680,21 +1696,6 @@ def undo_move(state):
     else:
         en_passant_x = old_ep % 8
         en_passant_y = old_ep // 8
-
-    # Search states stop at index 13.
-    if len(state) == 14:
-        return
-
-    white_score = state[14]
-    black_score = state[15]
-    capture_side = state[16]
-    capture_type = state[17]
-    old_capture_count = state[18]
-
-    if capture_side == 0 and capture_type != "." and capture_type != "k":
-        white_captures[capture_type] = old_capture_count
-    elif capture_side == 1 and capture_type != "." and capture_type != "k":
-        black_captures[capture_type] = old_capture_count
 
 # ------------------------------------------------------------
 # AI SEARCH ENGINE
@@ -2357,6 +2358,10 @@ while running:
                 board[promotion_y][promotion_x] = choice
             else:
                 board[promotion_y][promotion_x] = choice.upper()
+
+            update_material_state()
+            draw_captures()
+            draw_score()
 
             # Draw the selected promoted piece.
             redraw_square(
