@@ -121,9 +121,8 @@ CAPTURE_ROW = 18
 # Score difference below the board.
 SCORE_Y = 190
 
-# Light gray for the non-board UI panels.
-UI_BG = (255,255,255)
-LEFT_BG = (232,236,244)
+# Light blue-gray for every non-board part of the game screen.
+UI_BG = (232,236,244)
 LEFT_PANEL_W = 100
 
 # ------------------------------------------------------------
@@ -501,9 +500,9 @@ def draw_left_panel():
     # This is intentionally drawn before all left-side text so
     # no old white erase rectangles can remain visible.
     ti_draw.set_color(
-        LEFT_BG[0],
-        LEFT_BG[1],
-        LEFT_BG[2]
+        UI_BG[0],
+        UI_BG[1],
+        UI_BG[2]
     )
 
     # Logical y=18 maps to screen y=0 because of SHAPE_Y_FIX.
@@ -515,8 +514,11 @@ def draw_left_panel():
         210
     )
 
-    # Static text must be redrawn after painting the background.
+    # Preserve a visual boundary between the status panel and the board area.
     ti_draw.set_color(0,0,0)
+    ti_draw.draw_line(LEFT_PANEL_W,0,LEFT_PANEL_W,209)
+
+    # Static text must be redrawn after painting the background.
     ti_draw.draw_text(5,26,"CHESS")
     ti_draw.draw_text(5,153,"CLEAR")
     ti_draw.draw_text(5,169,"MENU")
@@ -700,7 +702,7 @@ def draw_score():
         text
     )
 
-def draw_capture_column(x,captures):
+def draw_capture_column(x,captures,white_piece):
     # Highest-value pieces first; only types that were actually captured.
     order = ["q","r","b","n","p"]
     row = 0
@@ -711,9 +713,8 @@ def draw_capture_column(x,captures):
         if count > 0:
             py = CAPTURE_Y + 22 + row*CAPTURE_ROW
 
-            # Black icon in both columns.
-            # W/B heading indicates which player made the captures.
-            draw_piece_shape(piece,x,py,False)
+            # Show the opposing piece color captured by this player.
+            draw_piece_shape(piece,x,py,white_piece)
 
             ti_draw.set_color(0,0,0)
             ti_draw.draw_text(
@@ -752,12 +753,14 @@ def draw_captures():
     # Two 24-pixel-ish columns.
     draw_capture_column(
         CAPTURE_X,
-        white_captures
+        white_captures,
+        False
     )
 
     draw_capture_column(
         CAPTURE_X+30,
-        black_captures
+        black_captures,
+        True
     )
 
 def save_active_cursor():
@@ -806,7 +809,7 @@ def clear_ai_move_highlight():
 def draw_menu_choice(text_x,text_y,text,selected,r,g,b):
     # Clear the complete option row, not merely the previous calculated box.
     # This guarantees that no edge of an old yellow frame can remain visible.
-    ti_draw.set_color(LEFT_BG[0],LEFT_BG[1],LEFT_BG[2])
+    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
     fill_rect_at(64,text_y-7,112,28)
 
     # The Evo-T menu font is slightly wider than the estimate used in v66.
@@ -866,7 +869,7 @@ def update_difficulty_select(old_value,new_value):
 
 def draw_player_select_screen():
     ti_draw.clear()
-    ti_draw.set_color(LEFT_BG[0],LEFT_BG[1],LEFT_BG[2])
+    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
     fill_rect_at(0,18,320,210)
 
     ti_draw.set_color(0,0,0)
@@ -884,7 +887,7 @@ def draw_player_select_screen():
 
 def draw_color_screen():
     ti_draw.clear()
-    ti_draw.set_color(LEFT_BG[0],LEFT_BG[1],LEFT_BG[2])
+    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
     fill_rect_at(0,18,320,210)
 
     ti_draw.set_color(0,0,0)
@@ -902,7 +905,7 @@ def draw_color_screen():
 
 def draw_difficulty_screen():
     ti_draw.clear()
-    ti_draw.set_color(LEFT_BG[0],LEFT_BG[1],LEFT_BG[2])
+    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
     fill_rect_at(0,18,320,210)
 
     ti_draw.set_color(0,0,0)
@@ -1086,10 +1089,9 @@ def perform_ai_move(move):
 def draw_initial_screen():
     ti_draw.clear()
 
-    # Keep all non-left UI areas white.
+    # Establish one consistent background around the board.
     ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
-    fill_rect_at(CAPTURE_X,18,320-CAPTURE_X,192)
-    fill_rect_at(BOARD_X,190,144,20)
+    fill_rect_at(0,18,320,210)
 
     # Paint a clean board first: one full-board fill plus only the 32 tiles
     # of the opposite color. Pieces are added only after the board is complete.
