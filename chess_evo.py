@@ -302,7 +302,6 @@ message = "SELECT PIECE"
 winner = ""
 stalemate = False
 quit_confirm = False
-quit_select = 1
 check_turn = -1
 # -1 = no check, 0 = white in check, 1 = black in check
 
@@ -313,6 +312,7 @@ promotion_y = -1
 promotion_side = -1
 promotion_index = 0
 PROMOTION_CHOICES = "qrbn"
+YES_NO_CHOICES = ("YES","NO")
 
 white_score = 0
 black_score = 0
@@ -550,13 +550,16 @@ def draw_status():
         ti_draw.set_color(0,0,0)
         ti_draw.draw_text(5,53,"RETURN?")
         ti_draw.draw_line(5,76+SHAPE_Y_FIX,95,76+SHAPE_Y_FIX)
-        draw_quit_choices()
+        draw_panel_option(0,"YES",False,2)
+        draw_panel_option(1,"NO",True,2)
         return
 
     if winner != "" or stalemate:
         ti_draw.set_color(0,0,0)
-        ti_draw.draw_text(5,53,"GAME")
-        ti_draw.draw_text(5,69,"OVER")
+        ti_draw.draw_text(5,53,"GO AGAIN")
+        ti_draw.draw_line(5,76+SHAPE_Y_FIX,95,76+SHAPE_Y_FIX)
+        draw_panel_option(0,"YES",True,2)
+        draw_panel_option(1,"NO",False,2)
         draw_game_over_popup()
         return
 
@@ -568,7 +571,7 @@ def draw_status():
         i = 0
 
         while i < 4:
-            draw_promotion_choice(i,i == promotion_index)
+            draw_promotion_choice(i,PROMOTION_CHOICES[i],i == promotion_index,4)
             i = i + 1
 
         ti_draw.set_color(0,0,0)
@@ -621,19 +624,9 @@ def draw_game_over_popup():
     else:
         result = "NO ONE WON"
 
-    lines = (result,"ENTER  AGAIN","CLEAR  RETURN")
-    longest = len(lines[0])
-    if len(lines[1]) > longest:
-        longest = len(lines[1])
-    if len(lines[2]) > longest:
-        longest = len(lines[2])
-
-    # Preserve the original content position, but extend only the right
-    # side of the popup by 20 pixels.
-    content_w = longest*8 + 16
-    box_w = content_w + 20
-    box_h = 76
-    box_x = BOARD_X + (SQUARE*8-content_w)//2
+    box_w = text_width(result)+16
+    box_h = 38
+    box_x = BOARD_X + (SQUARE*8-box_w)//2
     box_y = BOARD_Y + (SQUARE*8-box_h)//2
 
     ti_draw.set_color(245,245,245)
@@ -644,9 +637,7 @@ def draw_game_over_popup():
     draw_rect_at(box_x+1,box_y+1,box_w-3,box_h-3)
 
     ti_draw.set_color(0,0,0)
-    ti_draw.draw_text(box_x+(content_w-len(lines[0])*8)//2,box_y+8,lines[0])
-    ti_draw.draw_text(box_x+(content_w-len(lines[1])*8)//2,box_y+30,lines[1])
-    ti_draw.draw_text(box_x+(content_w-len(lines[2])*8)//2,box_y+52,lines[2])
+    ti_draw.draw_text(box_x+(box_w-text_width(result))//2,box_y+11,result)
 
 
 def score_text():
@@ -867,24 +858,22 @@ def draw_text_choice(x,y,w,text,selected):
     ti_draw.draw_text(x+(w-text_width(text))//2,y+4,text)
 
 
-def draw_promotion_choice(index,selected):
+def draw_promotion_choice(index,piece,selected,count):
     # Promotion uses the same choice background, but keeps the native 16x16
     # piece renderers instead of substituting text chess symbols.
     x = 4 + index*22
     y = 82
     draw_choice_box(x,y,20,20,selected)
-    piece = PROMOTION_CHOICES[index]
     if promotion_side == 1:
         piece = piece.upper()
     draw_piece_shape(piece,x+2,y+2,promotion_side == 0)
 
 
-def draw_quit_choices():
-    draw_text_choice(5,83,90,"YES",quit_select == 0)
-    draw_text_choice(5,111,90,"NO",quit_select == 1)
+def draw_panel_option(index,text,selected,count):
+    draw_text_choice(5,83+index*28,90,text,selected)
 
 
-def draw_menu_option(index,text,selected,count):
+def draw_setup_option(index,text,selected,count):
     # Two- and three-row menus share one centered column. Three-row menus
     # start higher so their complete group remains vertically balanced.
     y = 96 if count == 2 else 82
@@ -903,7 +892,7 @@ def draw_menu_screen(title,choices,selected,back_text):
 
     i = 0
     while i < len(choices):
-        draw_menu_option(i,choices[i],i == selected,len(choices))
+        draw_setup_option(i,choices[i],i == selected,len(choices))
         i = i+1
 
     ti_draw.set_color(0,0,0)
@@ -919,6 +908,31 @@ def draw_current_menu():
         draw_menu_screen("PLAY AS",("WHITE","BLACK"),menu_select,"BACK")
     else:
         draw_menu_screen("DIFFICULTY",("EASY","MEDIUM","HARD"),menu_select,"BACK")
+
+
+def choose_option(selected,choices,draw_option):
+    count = len(choices)
+
+    while True:
+        key = wait_for_key()
+        old = selected
+
+        if key == KEY_UP or key == KEY_LEFT:
+            selected = selected-1
+            if selected < 0:
+                selected = count-1
+        elif key == KEY_DOWN or key == KEY_RIGHT:
+            selected = selected+1
+            if selected == count:
+                selected = 0
+        elif key == KEY_ENTER:
+            return selected
+        elif key == KEY_CLEAR:
+            return KEY_CLEAR
+
+        if selected != old:
+            draw_option(old,choices[old],False,count)
+            draw_option(selected,choices[selected],True,count)
 
 
 def apply_difficulty():
@@ -941,7 +955,7 @@ def reset_game_state():
     global board, cursor_x, cursor_y
     global white_cursor, black_cursor, last_move
     global selected, turn, message
-    global winner, stalemate, quit_confirm, quit_select, check_turn
+    global winner, stalemate, quit_confirm, check_turn
     global promotion_pending, promotion_x, promotion_y
     global promotion_side, promotion_index
     global white_score, black_score, move_count
@@ -976,7 +990,6 @@ def reset_game_state():
     winner = ""
     stalemate = False
     quit_confirm = False
-    quit_select = 1
     check_turn = -1
     thinking = False
 
@@ -2218,18 +2231,6 @@ draw_current_menu()
 running = True
 
 while running:
-    # In one-player mode the AI owns its selected side. No key input is read
-    # while minimax is running.
-    if player_count == 1 and turn == ai_side and winner == "" and not stalemate and not promotion_pending and not quit_confirm:
-        thinking = True
-        draw_status()
-        ai_move = find_best_move(AI_DEPTH,ai_side)
-        thinking = False
-        perform_ai_move(ai_move)
-        continue
-
-    key = wait_for_key()
-
     # -------------------------
     # SETUP MENUS
     # -------------------------
@@ -2241,23 +2242,21 @@ while running:
         else:
             options = ("EASY","MEDIUM","HARD")
 
-        option_count = len(options)
+        choice = choose_option(menu_select,options,draw_setup_option)
 
-        if key == KEY_UP or key == KEY_LEFT:
-            old_select = menu_select
-            menu_select = menu_select-1
-            if menu_select < 0:
-                menu_select = option_count-1
-            draw_menu_option(old_select,options[old_select],False,option_count)
-            draw_menu_option(menu_select,options[menu_select],True,option_count)
-        elif key == KEY_DOWN or key == KEY_RIGHT:
-            old_select = menu_select
-            menu_select = menu_select+1
-            if menu_select == option_count:
+        if choice == KEY_CLEAR:
+            if menu_page == 0:
+                running = False
+            elif menu_page == 1:
+                menu_page = 0
                 menu_select = 0
-            draw_menu_option(old_select,options[old_select],False,option_count)
-            draw_menu_option(menu_select,options[menu_select],True,option_count)
-        elif key == KEY_ENTER:
+                draw_current_menu()
+            else:
+                menu_page = 1
+                menu_select = human_side
+                draw_current_menu()
+        else:
+            menu_select = choice
             if menu_page == 0 and menu_select == 1:
                 player_count = 2
                 reset_game_state()
@@ -2277,17 +2276,6 @@ while running:
                 player_count = 1
                 reset_game_state()
                 draw_initial_screen()
-        elif key == KEY_CLEAR:
-            if menu_page == 0:
-                running = False
-            elif menu_page == 1:
-                menu_page = 0
-                menu_select = 0
-                draw_current_menu()
-            else:
-                menu_page = 1
-                menu_select = human_side
-                draw_current_menu()
         continue
 
     # -------------------------
@@ -2295,129 +2283,18 @@ while running:
     # -------------------------
 
     if quit_confirm:
-        if key == KEY_UP or key == KEY_LEFT or key == KEY_DOWN or key == KEY_RIGHT:
-            quit_select = 1-quit_select
-            draw_quit_choices()
-        elif key == KEY_ENTER and quit_select == 0:
+        choice = choose_option(1,YES_NO_CHOICES,draw_panel_option)
+        quit_confirm = False
+
+        if choice == 0:
             selected = None
-            quit_confirm = False
             promotion_pending = False
             player_count = 0
             menu_page = 0
             menu_select = 0
             draw_current_menu()
-        elif key == KEY_CLEAR or key == KEY_ENTER:
-            quit_confirm = False
+        else:
             draw_status()
-
-        # Ignore all other keys while confirmation is visible.
-        continue
-
-    # On the game-over popup CLEAR returns directly to the main menu.
-    if key == KEY_CLEAR and (winner != "" or stalemate):
-        reset_game_state()
-        player_count = 0
-        menu_page = 0
-        menu_select = 0
-        human_side = 0
-        ai_side = 1
-        draw_current_menu()
-        continue
-
-    # First CLEAR press only asks to return to the main menu.
-    if key == KEY_CLEAR:
-        quit_confirm = True
-        quit_select = 1
-        draw_status()
-        continue
-
-    # -------------------------
-    # PAWN PROMOTION
-    # -------------------------
-
-    if promotion_pending:
-        if key == KEY_LEFT:
-            old_select = promotion_index
-            promotion_index = promotion_index-1
-
-            if promotion_index < 0:
-                promotion_index = 3
-
-            draw_promotion_choice(old_select,False)
-            draw_promotion_choice(promotion_index,True)
-
-        elif key == KEY_RIGHT:
-            old_select = promotion_index
-            promotion_index = promotion_index+1
-
-            if promotion_index > 3:
-                promotion_index = 0
-
-            draw_promotion_choice(old_select,False)
-            draw_promotion_choice(promotion_index,True)
-
-        elif key == KEY_ENTER:
-            choice = PROMOTION_CHOICES[promotion_index]
-
-            if promotion_side == 0:
-                board[promotion_y][promotion_x] = choice
-            else:
-                board[promotion_y][promotion_x] = choice.upper()
-
-            update_material_state()
-            draw_score()
-
-            # Draw the selected promoted piece.
-            redraw_square(
-                promotion_x,
-                promotion_y
-            )
-
-            promotion_pending = False
-            promotion_x = -1
-            promotion_y = -1
-            promotion_side = -1
-            promotion_index = 0
-
-            old_check_turn = check_turn
-
-            # Promotion completes the current player's move.
-            if turn == 1:
-                move_count = move_count+1
-                draw_moves()
-
-            if turn == 0:
-                turn = 1
-            else:
-                turn = 0
-
-            if player_count == 2:
-                switch_to_turn_cursor()
-
-            if is_in_check(turn):
-                check_turn = turn
-            else:
-                check_turn = -1
-
-            redraw_check_change(
-                old_check_turn,
-                check_turn
-            )
-
-            # No legal moves means either checkmate or stalemate.
-            if not has_legal_move(turn):
-                if check_turn == turn:
-                    if turn == 0:
-                        winner = "BLACK"
-                    else:
-                        winner = "WHITE"
-                else:
-                    stalemate = True
-
-            message = "SELECT PIECE"
-            draw_status()
-
-        # UP/DOWN and other keys do nothing while choosing promotion.
         continue
 
     # -------------------------
@@ -2425,12 +2302,116 @@ while running:
     # -------------------------
 
     if winner != "" or stalemate:
-        if key == KEY_ENTER:
+        choice = choose_option(0,YES_NO_CHOICES,draw_panel_option)
+
+        if choice == 0:
             # Rematch with the same player count, color and difficulty.
             reset_game_state()
             draw_initial_screen()
+        else:
+            reset_game_state()
+            player_count = 0
+            menu_page = 0
+            menu_select = 0
+            human_side = 0
+            ai_side = 1
+            draw_current_menu()
+        continue
 
-        # Arrow keys and other buttons do nothing after game over.
+    # -------------------------
+    # PAWN PROMOTION
+    # -------------------------
+
+    if promotion_pending:
+        choice = choose_option(
+            promotion_index,
+            PROMOTION_CHOICES,
+            draw_promotion_choice
+        )
+
+        if choice == KEY_CLEAR:
+            quit_confirm = True
+            draw_status()
+            continue
+
+        promotion_index = choice
+        choice = PROMOTION_CHOICES[promotion_index]
+
+        if promotion_side == 0:
+            board[promotion_y][promotion_x] = choice
+        else:
+            board[promotion_y][promotion_x] = choice.upper()
+
+        update_material_state()
+        draw_score()
+
+        # Draw the selected promoted piece.
+        redraw_square(
+            promotion_x,
+            promotion_y
+        )
+
+        promotion_pending = False
+        promotion_x = -1
+        promotion_y = -1
+        promotion_side = -1
+        promotion_index = 0
+
+        old_check_turn = check_turn
+
+        # Promotion completes the current player's move.
+        if turn == 1:
+            move_count = move_count+1
+            draw_moves()
+
+        if turn == 0:
+            turn = 1
+        else:
+            turn = 0
+
+        if player_count == 2:
+            switch_to_turn_cursor()
+
+        if is_in_check(turn):
+            check_turn = turn
+        else:
+            check_turn = -1
+
+        redraw_check_change(
+            old_check_turn,
+            check_turn
+        )
+
+        # No legal moves means either checkmate or stalemate.
+        if not has_legal_move(turn):
+            if check_turn == turn:
+                if turn == 0:
+                    winner = "BLACK"
+                else:
+                    winner = "WHITE"
+            else:
+                stalemate = True
+
+        message = "SELECT PIECE"
+        draw_status()
+        continue
+
+    # In one-player mode the AI owns its selected side. No key input is read
+    # while minimax is running.
+    if player_count == 1 and turn == ai_side:
+        thinking = True
+        draw_status()
+        ai_move = find_best_move(AI_DEPTH,ai_side)
+        thinking = False
+        perform_ai_move(ai_move)
+        continue
+
+    key = wait_for_key()
+
+    # First CLEAR press only asks to return to the main menu.
+    if key == KEY_CLEAR:
+        quit_confirm = True
+        draw_status()
         continue
 
     # -------------------------
