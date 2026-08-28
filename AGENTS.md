@@ -1,0 +1,335 @@
+# TI-84 Evo-T Chess — Instructions
+
+These instructions capture the constraints and decisions that future agents must preserve when working on this project.
+
+> Target device is the **TI-84 Evo-T**, not the older TI-84 Plus CE / CE-T. Do not assume CE behavior or APIs apply unless verified on the Evo-T.
+
+## 1. Always produce two files
+
+For every iteration generate:
+
+1. **Readable source**
+   - clear names and comments;
+   - intended for review and further editing.
+
+2. **Aggressively minified test build**
+   - we use a tool for minification
+   - intended for the calculator;
+   - must preserve identical behavior;
+   - identifier shortening must be collision-safe;
+   - never rename Python/library keyword arguments accidentally.
+
+## 2. Memory is the main constraint
+
+The nominal `.py` limit is about 64 KB, but practical memory is much lower because source, parser/compiler structures, bytecode, symbols, globals, containers and runtime data share limited RAM.
+
+Typical failures:
+
+```text
+MemoryError: memory allocation failed, allocating 128 bytes
+MemoryError: memory allocation failed, allocating 467 bytes
+```
+
+The failed allocation is usually only the next allocation that could not fit.
+
+**File size alone is not a reliable measure.** A smaller file can require more parser/compiler memory.
+
+When memory is tight, prefer:
+
+- fewer statements;
+- fewer AST nodes;
+- fewer identifiers;
+- fewer list/tuple literals;
+- fewer repeated expressions such as `px+7`;
+- fewer helper layers unless they replace more syntax than they add.
+
+A previous attempt to split a polygon into several smaller polygons reduced one runtime list allocation but increased parser complexity and made startup memory worse.
+
+Optimize for **simple Python structure**, not only source bytes.
+
+## 3. Minification rules
+
+Safe techniques:
+
+- remove comments/docstrings;
+- remove optional whitespace;
+- pack safe statements;
+- shorten project-owned identifiers;
+- alias frequently used `ti_draw` calls when beneficial.
+
+Do not use naive text replacement. Protect:
+
+- keyword arguments such as `sort(key=...)`;
+- imported API names;
+- attributes;
+- strings;
+- Python syntax.
+
+### Bitboards
+
+Do not replace the current board representation with bitboards.
+
+A calculator-side benchmark already compared equivalent move-generation work:
+
+> **The existing array/list representation was about 85% faster than the tested bitboard approach on the TI-84 Evo-T.**
+
+Only reconsider bitboards after a new Evo-T benchmark proves an improvement.
+
+## 4. Evo-T graphics constraints
+
+The project uses:
+
+```python
+import ti_draw
+import ti_system
+```
+
+No usable Evo-T Python API has been found for raw framebuffer/memcpy-style pixel blitting.
+
+Do not rely on CE-specific APIs such as `ti_image` unless verified on the Evo-T.
+
+`use_buffer()` was unsupported in the tested Evo-T environment.
+
+### Y-coordinate correction
+
+Shape primitives require the project-specific correction:
+
+```python
+SHAPE_Y_FIX = -18
+```
+
+Wrappers such as `fill_rect_at()` and `draw_rect_at()` centralize this offset. Keep the correction centralized unless the whole coordinate model is deliberately redesigned and tested on hardware.
+
+## 5. `fill_rect()` and `draw_rect()` behave differently
+
+This caused several one-pixel rendering bugs.
+
+Observed on the real Evo-T:
+
+- `draw_rect()` behaves as if the far edge is included.
+- `fill_rect()` effectively excludes the far right/bottom edge.
+
+Therefore identical width/height values do not necessarily cover identical pixels.
+
+Example: an exact 18×18 rectangle outline uses approximately:
+
+```python
+draw_rect_at(x, y, 17, 17)
+```
+
+Full fills may require an extra pixel in width/height to avoid a white seam on the right or bottom.
+
+Do not “normalize” these calls without testing on the real calculator.
+
+Close-up photos can also show RGB subpixel fringes. Judge alignment by logical pixel cells, not colored camera fringes.
+
+## 6. Board geometry
+
+```python
+BOARD_X = 115
+BOARD_Y = 26
+SQUARE = 18
+```
+
+The board is 8×8 adjacent 18×18 tiles with **no intentional white spacing**.
+
+Pieces must stay inside the inner **16×16** area:
+
+```python
+piece_x = BOARD_X + x*SQUARE + 1
+piece_y = BOARD_Y + y*SQUARE + 1
+```
+
+Never let piece graphics overwrite the tile-border/highlight pixels.
+
+## 7. Initial board rendering
+
+Initial drawing is intentionally optimized:
+
+1. fill the complete board once with one square color;
+2. paint only the 32 squares of the opposite color;
+3. draw all starting pieces afterward.
+
+Do not repaint all 64 squares individually during initialization unless there is a measured reason.
+
+During gameplay redraw only affected squares, e.g.:
+
+- source;
+- destination;
+- en-passant capture square;
+- rook squares during castling;
+- changed CHECK king;
+- promotion square.
+
+Never redraw the whole board after each move.
+
+## 8. Keep square drawing and highlighting separate
+
+`draw_square(x,y)` handles only:
+
+- square interior;
+- piece on that square.
+
+It must not decide cursor/selection/last-move state.
+
+All tile highlights must use:
+
+```python
+draw_tile_highlight(x, y, color)
+clear_tile_highlight(x, y)
+```
+
+Coordinates:
+
+- `(0,0)` = upper-left;
+- `(7,7)` = lower-right.
+
+`clear_tile_highlight(x,y)` restores the border using `square_color(x,y)`, not white.
+
+Yellow cursor, cyan selection and green last-move highlights must use the same geometry and code path.
+
+The current highlight uses a **thin** pen. Medium was more visible but could overlap neighboring highlights and required neighbor restoration.
+
+## 9. Piece-rendering rules
+
+There are six specialized renderers:
+
+```python
+draw_pawn(...)
+draw_rook(...)
+draw_knight(...)
+draw_bishop(...)
+draw_queen(...)
+draw_king(...)
+```
+
+Rules:
+
+- stay within the 16×16 piece area;
+- use very few native graphics primitives;
+- prefer a recognizable simple silhouette over pixel-perfect detail;
+- avoid hundreds of hard-coded `draw_line()` statements;
+- avoid the old horizontal-run sprite renderer unless a benchmark proves it better.
+
+Preferred primitives:
+
+```python
+fill_poly
+draw_poly
+fill_circle
+draw_circle
+fill_rect
+draw_rect
+draw_line
+```
+
+### Fill and outline
+
+`ti_draw` has one active color, not separate fill/stroke colors.
+
+Preferred pattern:
+
+```python
+set fill color
+fill_poly(...)
+
+set opposite outline color
+draw_poly(...)
+```
+
+This avoids drawing a large outline silhouette underneath and repainting most of it.
+
+White pieces use white fill/black outline. Black pieces use black fill/white outline. A king in check uses red fill with the contrasting outline.
+
+### Polygon complexity
+
+Keep vertex counts low.
+
+Repeated expressions like `px+7`, `py+12` increase parser complexity. The current code uses relative-coordinate data and a shared polygon helper to reduce repeated syntax.
+
+Do not split one polygon into many smaller polygons merely to reduce temporary list size; that can increase startup/compiler memory.
+
+## 10. Cursor and redraw behavior
+
+Cursor movement should not redraw pieces.
+
+Typical flow:
+
+1. clear the old tile highlight;
+2. restore any logical highlight that belongs there;
+3. draw the new cursor highlight.
+
+If cursor movement starts repainting pieces, the rendering/highlight separation has been broken.
+
+## 11. Input
+
+Key codes:
+
+```text
+LEFT   24
+UP     25
+RIGHT  26
+DOWN   34
+CLEAR  45
+ENTER  105
+```
+
+Use `ti_system.get_key(0)` with key-release handling so one physical press gives one movement.
+
+Avoid `input()` because it does not fit the graphical UI.
+
+## 12. Validation
+
+Desktop tests are useful for:
+
+- syntax errors;
+- missing names;
+- broken minification;
+- basic startup flow.
+
+They do **not** reproduce Evo-T:
+
+- memory limits;
+- parser/compiler pressure;
+- drawing extents;
+- graphics performance;
+- LCD appearance.
+
+Final validation must happen on the real calculator.
+
+If a build fails with `MemoryError` before gameplay starts, first suspect parser/compiler footprint rather than the AI or drawing-time allocations.
+
+## 13. Things not to casually reintroduce
+
+Avoid unless measured on the Evo-T:
+
+- bitboards;
+- full-board redraws during gameplay;
+- dozens/hundreds of hard-coded line calls per piece;
+- tuple-driven horizontal sprite runs;
+- piece pixels in the highlight border;
+- separate highlight implementations for different colors;
+- medium/thick highlights without neighbor restoration;
+- many small polygons replacing one compact polygon;
+- CE/CE-T-specific APIs;
+- raw framebuffer assumptions;
+- unrelated AI changes.
+
+## 14. Preferred workflow
+
+For every change:
+
+1. start from the latest readable source;
+2. change only the requested subsystem;
+3. preserve AI unless explicitly asked;
+4. keep piece graphics inside 16×16;
+5. preserve incremental redraws and highlight separation;
+6. favor fewer Python constructs and fewer graphics calls;
+7. generate readable + minified versions;
+8. compile-check both;
+9. compare minified size and, when memory is tight, syntax/AST complexity;
+10. test the minified build on the actual Evo-T.
+
+Core principle:
+
+> **On the TI-84 Evo-T, fewer Python constructs and fewer native drawing calls matter more than blindly minimizing source-file bytes.**
