@@ -58,10 +58,10 @@ The intended shape is:
     "release": {
       "piece_style": "graphical",
       "features": {
-        "capture_panel": true,
-        "material_counter": true,
+        "show_captures": true,
+        "material_advantage": true,
         "move_counter": true,
-        "player_undo": true
+        "undo_last_move": true
       }
     },
     "debug": {
@@ -75,10 +75,10 @@ The intended shape is:
             "ai_evaluated_moves": true
           }
         },
-        "capture_panel": true,
-        "material_counter": true,
+        "show_captures": true,
+        "material_advantage": true,
         "move_counter": true,
-        "player_undo": true
+        "undo_last_move": true
       }
     }
   }
@@ -192,8 +192,8 @@ These are independent features.
 The material counter is derived from pieces remaining on `board` by
 `update_material_state()`. It does not require capture history.
 
-The capture panel separately records captured-piece counts in
-`white_captures` and `black_captures`. It does not require the material counter.
+The `show_captures` feature separately records captured-piece counts in
+`white_captures` and `black_captures`. It does not require the material advantage.
 
 They currently share some move-update sites. Feature selection must retain only
 the bookkeeping and drawing required by the selected combination.
@@ -216,9 +216,9 @@ Both styles must preserve board geometry, the 16x16 piece boundary, incremental
 redraw behavior, and highlight separation. The unused implementation must be
 physically absent from the preprocessed build.
 
-### Player undo
+### Undo last move
 
-`player_undo` controls only the user-visible ability to undo completed moves.
+`undo_last_move` controls only the user-visible ability to undo completed moves.
 When disabled it may remove DEL handling, `undo_played_moves()`, retained
 `player_move_state`/`ai_move_state`, and gameplay-only rollback data.
 
@@ -228,10 +228,10 @@ enabled.
 
 Undo has conditional integration points rather than dependencies:
 
-- `player_undo` plus `capture_panel` must roll back capture history;
-- `player_undo` plus `material_counter` must restore the visible material
+- `undo_last_move` plus `show_captures` must roll back capture history;
+- `undo_last_move` plus `material_advantage` must restore the visible material
   result after the board is restored; and
-- `player_undo` plus `move_counter` must adjust and redraw the move count.
+- `undo_last_move` plus `move_counter` must adjust and redraw the move count.
 
 When either side of an integration is disabled, its integration code and
 state must also be absent.

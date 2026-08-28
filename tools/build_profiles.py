@@ -20,10 +20,10 @@ from typing import Any
 PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 PIECE_STYLES = frozenset(("graphical", "glyphs"))
 BOOLEAN_FEATURES = (
-    "capture_panel",
-    "material_counter",
+    "show_captures",
+    "material_advantage",
     "move_counter",
-    "player_undo",
+    "undo_last_move",
 )
 DEBUG_METRICS = (
     "last_key",

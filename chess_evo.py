@@ -85,7 +85,7 @@ SQUARE = const(18)
 SHAPE_Y_FIX = const(-18)
 
 # ------------------------------------------------------------
-# SCORE + CAPTURE PANEL
+# MATERIAL SCORE
 # ------------------------------------------------------------
 PIECE_VALUES = const({
     "p":1,
@@ -138,11 +138,12 @@ AI_DEVELOPMENT_BONUS = const(12)
 AI_CASTLED_BONUS = const(25)
 AI_BISHOP_PAIR_BONUS = const(20)
 
-# Right side of the 320-pixel drawing area.
-CAPTURE_X = const(260)
-CAPTURE_Y = const(26)
-CAPTURE_W = const(59)
-CAPTURE_ROW = const(18)
+if build_feature("show_captures"):
+    # Right side of the 320-pixel drawing area.
+    CAPTURE_X = const(260)
+    CAPTURE_Y = const(26)
+    CAPTURE_W = const(59)
+    CAPTURE_ROW = const(18)
 
 # Score and move count share the line below the board.
 SCORE_Y = const(190)
@@ -349,23 +350,24 @@ YES_NO_CHOICES = const(("YES","NO"))
 # Standard full moves completed; incremented after each black move.
 white_score = black_score = move_count = 0
 
-# Keys are lowercase piece types. Promoted pieces are recorded as pawns when
-# captured, without needing to track the identity of individual pieces.
-white_captures = {
-    "p":0,
-    "n":0,
-    "b":0,
-    "r":0,
-    "q":0
-}
+if build_feature("show_captures"):
+    # Keys are lowercase piece types. Promoted pieces are recorded as pawns
+    # when captured, without tracking the identity of individual pieces.
+    white_captures = {
+        "p":0,
+        "n":0,
+        "b":0,
+        "r":0,
+        "q":0
+    }
 
-black_captures = {
-    "p":0,
-    "n":0,
-    "b":0,
-    "r":0,
-    "q":0
-}
+    black_captures = {
+        "p":0,
+        "n":0,
+        "b":0,
+        "r":0,
+        "q":0
+    }
 
 # ------------------------------------------------------------
 # SPECIAL MOVE STATE
@@ -771,52 +773,53 @@ def draw_moves():
     ti_draw.set_color(0,0,0)
     ti_draw.draw_text(right-text_width(text),SCORE_Y,text)
 
-def draw_capture_column(x,captures,white_piece):
-    # Highest-value captured pieces first.
-    order = ["q","r","b","n","p"]
-    row = 0
+if build_feature("show_captures"):
+    def draw_capture_column(x,captures,white_piece):
+        # Highest-value captured pieces first.
+        order = ["q","r","b","n","p"]
+        row = 0
 
-    for piece in order:
-        count = captures[piece]
+        for piece in order:
+            count = captures[piece]
 
-        if count > 0:
-            py = CAPTURE_Y + 22 + row*CAPTURE_ROW
+            if count > 0:
+                py = CAPTURE_Y + 22 + row*CAPTURE_ROW
 
-            # Show the opposing piece color captured by this player.
-            draw_piece_shape(piece,x,py,white_piece)
+                # Show the opposing piece color captured by this player.
+                draw_piece_shape(piece,x,py,white_piece)
 
-            ti_draw.set_color(0,0,0)
-            ti_draw.draw_text(
-                x+16,
-                py+1,
-                str(count)
+                ti_draw.set_color(0,0,0)
+                ti_draw.draw_text(
+                    x+16,
+                    py+1,
+                    str(count)
+                )
+
+                row += 1
+
+    def draw_captures(side=-1):
+        # A move changes only the capturing player's column. side=-1 is the
+        # full-panel draw used during setup/reset.
+        ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
+
+        if side < 0:
+            fill_rect_at(CAPTURE_X,CAPTURE_Y,CAPTURE_W,120)
+
+            ti_draw.set_color(0,0,180)
+            ti_draw.draw_text(CAPTURE_X+3,CAPTURE_Y,"W")
+            ti_draw.set_color(180,0,0)
+            ti_draw.draw_text(CAPTURE_X+34,CAPTURE_Y,"B")
+
+            draw_capture_column(CAPTURE_X,white_captures,False)
+            draw_capture_column(CAPTURE_X+30,black_captures,True)
+        else:
+            x = CAPTURE_X+side*30
+            fill_rect_at(x,CAPTURE_Y+22,29,98)
+            draw_capture_column(
+                x,
+                white_captures if side == 0 else black_captures,
+                side == 1
             )
-
-            row += 1
-
-def draw_captures(side=-1):
-    # A move changes only the capturing player's column. side=-1 is the
-    # full-panel draw used during setup/reset.
-    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
-
-    if side < 0:
-        fill_rect_at(CAPTURE_X,CAPTURE_Y,CAPTURE_W,120)
-
-        ti_draw.set_color(0,0,180)
-        ti_draw.draw_text(CAPTURE_X+3,CAPTURE_Y,"W")
-        ti_draw.set_color(180,0,0)
-        ti_draw.draw_text(CAPTURE_X+34,CAPTURE_Y,"B")
-
-        draw_capture_column(CAPTURE_X,white_captures,False)
-        draw_capture_column(CAPTURE_X+30,black_captures,True)
-    else:
-        x = CAPTURE_X+side*30
-        fill_rect_at(x,CAPTURE_Y+22,29,98)
-        draw_capture_column(
-            x,
-            white_captures if side == 0 else black_captures,
-            side == 1
-        )
 
 def update_material_state():
     # Rebuild the material score from the pieces currently on the board.
@@ -836,27 +839,28 @@ def update_material_state():
                 else:
                     black_score += value
 
-def record_capture(captured_piece,side):
-    # If the remaining pieces plus earlier captures already account for all
-    # original pieces of this type, this capture must consume a promoted pawn.
-    kind = captured_piece.lower()
-    if kind == "k":
-        return "."
+if build_feature("show_captures"):
+    def record_capture(captured_piece,side):
+        # If remaining pieces plus earlier captures account for all original
+        # pieces of this type, this capture must consume a promoted pawn.
+        kind = captured_piece.lower()
+        if kind == "k":
+            return "."
 
-    captures = white_captures if side == 0 else black_captures
-    start_count = 1 if kind == "q" else 8 if kind == "p" else 2
-    count = 0
+        captures = white_captures if side == 0 else black_captures
+        start_count = 1 if kind == "q" else 8 if kind == "p" else 2
+        count = 0
 
-    for row in board:
-        for piece in row:
-            if piece == captured_piece:
-                count += 1
+        for row in board:
+            for piece in row:
+                if piece == captured_piece:
+                    count += 1
 
-    if count+captures[kind] >= start_count:
-        kind = "p"
+        if count+captures[kind] >= start_count:
+            kind = "p"
 
-    captures[kind] += 1
-    return kind
+        captures[kind] += 1
+        return kind
 
 def save_active_cursor():
     global white_cursor, black_cursor
@@ -1020,7 +1024,8 @@ def reset_game_state():
     global white_castle_k, white_castle_q
     global black_castle_k, black_castle_q
     global en_passant_x, en_passant_y
-    global white_captures, black_captures
+    if build_feature("show_captures"):
+        global white_captures, black_captures
     global thinking
     if build_feature("debug_panel"):
         global debug_panel
@@ -1066,8 +1071,9 @@ def reset_game_state():
 
     en_passant_x = en_passant_y = -1
 
-    white_captures = {"p":0,"n":0,"b":0,"r":0,"q":0}
-    black_captures = {"p":0,"n":0,"b":0,"r":0,"q":0}
+    if build_feature("show_captures"):
+        white_captures = {"p":0,"n":0,"b":0,"r":0,"q":0}
+        black_captures = {"p":0,"n":0,"b":0,"r":0,"q":0}
     update_material_state()
 
 
@@ -1150,7 +1156,8 @@ def perform_ai_move(move):
         )
 
     if captured_piece != ".":
-        draw_captures(ai_side)
+        if build_feature("show_captures"):
+            draw_captures(ai_side)
     if captured_piece != "." or promotion is not None:
         draw_score()
     if ai_side == 1:
@@ -1219,7 +1226,8 @@ def draw_initial_screen():
     draw_status_panel_frame()
     draw_status_panel()
     draw_panel_separator()
-    draw_captures()
+    if build_feature("show_captures"):
+        draw_captures()
     draw_score()
     draw_moves()
 
@@ -1593,7 +1601,7 @@ SEARCH_STATES = [[None]*14 for _ in range(4)]
 #  6 captured piece, 7 capture y, 8 capture x
 #  9 rook from x, 10 rook to x, 11 rook piece
 # 12 packed old castling rights, 13 packed old en-passant target
-# 14 capture-panel piece type (gameplay states only)
+# 14 capture-panel piece type when show_captures is enabled (gameplay only)
 
 def make_move(y1,x1,y2,x2,side,update_material=True,promotion_piece=None,search_slot=0):
     global white_castle_k, white_castle_q
@@ -1676,9 +1684,10 @@ def make_move(y1,x1,y2,x2,side,update_material=True,promotion_piece=None,search_
         en_passant_x = x1
         en_passant_y = (y1+y2)//2
 
-    capture_kind = "."
-    if update_material and captured_piece != ".":
-        capture_kind = record_capture(captured_piece,side)
+    if build_feature("show_captures"):
+        capture_kind = "."
+        if update_material and captured_piece != ".":
+            capture_kind = record_capture(captured_piece,side)
 
     if update_material and (captured_piece != "." or promotion_piece is not None):
         update_material_state()
@@ -1692,8 +1701,12 @@ def make_move(y1,x1,y2,x2,side,update_material=True,promotion_piece=None,search_
         state[12]=old_castle_bits; state[13]=old_ep
         return state
 
-    return [p,y1,x1,y2,x2,target,captured_piece,capture_y,capture_x,
-            rook_from_x,rook_to_x,rook_piece,old_castle_bits,old_ep,capture_kind]
+    if build_feature("show_captures"):
+        return [p,y1,x1,y2,x2,target,captured_piece,capture_y,capture_x,
+                rook_from_x,rook_to_x,rook_piece,old_castle_bits,old_ep,capture_kind]
+    else:
+        return [p,y1,x1,y2,x2,target,captured_piece,capture_y,capture_x,
+                rook_from_x,rook_to_x,rook_piece,old_castle_bits,old_ep]
 
 
 def undo_move(state,played=False):
@@ -1733,10 +1746,11 @@ def undo_move(state,played=False):
         en_passant_y = old_ep // 8
 
     if played:
-        capture_kind = state[14]
-        if capture_kind != ".":
-            captures = white_captures if is_white(p) else black_captures
-            captures[capture_kind] -= 1
+        if build_feature("show_captures"):
+            capture_kind = state[14]
+            if capture_kind != ".":
+                captures = white_captures if is_white(p) else black_captures
+                captures[capture_kind] -= 1
 
         for x,y in ((x1,y1),(x2,y2),(capture_x,capture_y),
                     (rook_from_x,y2),(rook_to_x,y2)):
@@ -1777,7 +1791,8 @@ def undo_played_moves():
     else:
         draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
 
-    draw_captures()
+    if build_feature("show_captures"):
+        draw_captures()
     draw_score()
     draw_moves()
     message = "SELECT PIECE"
@@ -2691,7 +2706,8 @@ while running:
                     )
 
                 if captured_piece != ".":
-                    draw_captures(turn)
+                    if build_feature("show_captures"):
+                        draw_captures(turn)
                     draw_score()
 
                 if captured_king:

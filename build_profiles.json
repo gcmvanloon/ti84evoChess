@@ -3,11 +3,14 @@
   "profiles": {
     "release": {
       "piece_style": "graphical",
-      "features": {}
+      "features": {
+        "show_captures": true
+      }
     },
     "debug": {
       "piece_style": "glyphs",
       "features": {
+        "show_captures": true,
         "debug_panel": {
           "metrics": {
             "last_key": false,

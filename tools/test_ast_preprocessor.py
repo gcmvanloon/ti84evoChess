@@ -18,10 +18,10 @@ class SelectBuildFeaturesTests(unittest.TestCase):
     def test_splices_enabled_body_and_disabled_else(self):
         source = (
             "def build_feature(name): return True\n"
-            "if build_feature('capture_panel'):\n    result = 'on'\n"
+            "if build_feature('show_captures'):\n    result = 'on'\n"
             "else:\n    result = 'off'\n"
         )
-        output, _ = preprocess(source, profile=profile("capture_panel"))
+        output, _ = preprocess(source, profile=profile("show_captures"))
         namespace = {}
         exec(output, namespace)
         self.assertEqual(namespace["result"], "on")
@@ -47,11 +47,11 @@ class SelectBuildFeaturesTests(unittest.TestCase):
         source = (
             "def build_feature(name): return True\n"
             "def const(value): return value\n"
-            "if build_feature('capture_panel'):\n    VALUE = const(7)\n"
+            "if build_feature('show_captures'):\n    VALUE = const(7)\n"
             "result = VALUE\n"
         )
         output, constants_pass = preprocess(
-            source, profile=profile("capture_panel")
+            source, profile=profile("show_captures")
         )
         self.assertEqual(constants_pass.constant_count, 1)
         self.assertNotIn("VALUE", output)
@@ -60,12 +60,12 @@ class SelectBuildFeaturesTests(unittest.TestCase):
         with self.assertRaisesRegex(PreprocessorError, "unknown build feature"):
             preprocess("if build_feature('missing'):\n    result = 1\n", profile=profile())
         with self.assertRaisesRegex(PreprocessorError, "complete if conditions"):
-            preprocess("result = build_feature('capture_panel')\n", profile=profile())
+            preprocess("result = build_feature('show_captures')\n", profile=profile())
 
     def test_nested_disabled_markers_leave_no_empty_statement(self):
         source = (
             "if True:\n"
-            "    if build_feature('capture_panel'):\n"
+            "    if build_feature('show_captures'):\n"
             "        result = 1\n"
             "result = 2\n"
         )
@@ -94,6 +94,30 @@ class SelectBuildFeaturesTests(unittest.TestCase):
         self.assertNotIn("DEBUG", release)
         self.assertNotIn("KEY_TRACE", release)
         self.assertNotIn("build_feature", release)
+
+    def test_chess_source_removes_captures_without_material_score(self):
+        source_path = Path(__file__).resolve().parent.parent / "chess_evo.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        with_captures, _ = preprocess(
+            source, str(source_path), profile("show_captures")
+        )
+        self.assertIn("white_captures", with_captures)
+        self.assertIn("def draw_captures", with_captures)
+        self.assertIn("def record_capture", with_captures)
+
+        without_captures, _ = preprocess(source, str(source_path), profile())
+        self.assertNotIn("white_captures", without_captures)
+        self.assertNotIn("black_captures", without_captures)
+        self.assertNotIn("CAPTURE_X", without_captures)
+        self.assertNotIn("def draw_captures", without_captures)
+        self.assertNotIn("def record_capture", without_captures)
+        self.assertNotIn("capture_kind", without_captures)
+        self.assertNotIn("state[14]", without_captures)
+        self.assertIn("white_score", without_captures)
+        self.assertIn("def draw_score", without_captures)
+        self.assertIn("def update_material_state", without_captures)
+        self.assertNotIn("build_feature", without_captures)
 
     def test_chess_source_keeps_only_selected_piece_style(self):
         source_path = Path(__file__).resolve().parent.parent / "chess_evo.py"

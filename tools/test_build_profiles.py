@@ -37,6 +37,16 @@ class BuildProfileTests(unittest.TestCase):
         self.assertTrue(resolved.features["debug_panel.metrics.free_memory"])
         self.assertFalse(resolved.features["debug_panel.metrics.last_key"])
 
+    def test_show_captures_is_an_independent_boolean(self):
+        resolved = self.resolve(
+            {
+                "piece_style": "graphical",
+                "features": {"show_captures": True},
+            }
+        )
+        self.assertTrue(resolved.features["show_captures"])
+        self.assertFalse(resolved.features["material_advantage"])
+
     def test_rejects_duplicate_keys(self):
         with self.assertRaisesRegex(
             ProfileError, "root.profiles.release.piece_style: duplicate object key"
@@ -80,7 +90,7 @@ class BuildProfileTests(unittest.TestCase):
     def test_rejects_non_booleans_unknowns_and_debug_enabled(self):
         with self.assertRaisesRegex(ProfileError, "must be a JSON Boolean"):
             self.resolve(
-                {"piece_style": "graphical", "features": {"capture_panel": 1}}
+                {"piece_style": "graphical", "features": {"show_captures": 1}}
             )
         with self.assertRaisesRegex(ProfileError, "unknown property"):
             self.resolve(
