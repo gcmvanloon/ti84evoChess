@@ -637,16 +637,15 @@ def draw_debug_panel_frame():
     draw_rect_at(0,18,LEFT_PANEL_W-1,209)
     ti_draw.set_color(0,60,170)
     ti_draw.draw_text(5,26,"DEBUG")
-    ti_draw.draw_text(5,101,"FREE")
-    ti_draw.draw_text(5,117,str(gc.mem_free()))
+    ti_draw.draw_text(5,53,"LK --")
+    ti_draw.draw_text(5,69,"FM "+str(gc.mem_free()))
 
 
 def draw_debug_key(key):
     ti_draw.set_color(240,165,70)
-    fill_rect_at(4,45,91,42)
+    fill_rect_at(4,45,91,24)
     ti_draw.set_color(0,60,170)
-    ti_draw.draw_text(5,53,"KEY")
-    ti_draw.draw_text(5,69,str(key))
+    ti_draw.draw_text(5,53,"LK "+str(key))
 
 
 def draw_game_over_popup():
