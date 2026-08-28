@@ -118,7 +118,7 @@ CAPTURE_Y = 26
 CAPTURE_W = 59
 CAPTURE_ROW = 18
 
-# Score difference below the board.
+# Score and move count share the line below the board.
 SCORE_Y = 190
 
 # Light blue-gray for every non-board part of the game screen.
@@ -316,6 +316,8 @@ PROMOTION_CHOICES = "qrbn"
 
 white_score = 0
 black_score = 0
+# Standard full moves completed; incremented after each black move.
+move_count = 0
 
 # Keys are always lowercase piece types.
 white_captures = {
@@ -682,22 +684,23 @@ def score_text():
 
     return "+0"
 
+def text_width(text):
+    # Evo-T text glyphs are 8 pixels wide with 2 pixels between characters.
+    return len(text)*10-2
+
 def draw_score():
-    # Clear only the small area below the board.
+    # The largest possible material lead is W+39/B+39 (four characters).
+    # Its 38-pixel text width needs 39 here because fill_rect() excludes
+    # the far edge.
     ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
     fill_rect_at(
         BOARD_X,
         SCORE_Y-3,
-        144,
+        39,
         19
     )
 
     text = score_text()
-
-    # Center the score under the exact 144-pixel board width.
-    board_width = SQUARE*8
-    text_width = len(text)*8
-    tx = BOARD_X + (board_width-text_width)//2
 
     # +0 remains neutral black.
     if text == "+0":
@@ -710,10 +713,35 @@ def draw_score():
         ti_draw.set_color(180,0,0)
 
     ti_draw.draw_text(
-        tx,
+        BOARD_X,
         SCORE_Y,
         text
     )
+
+def draw_moves():
+    count_text = str(move_count)
+    digits = len(count_text)
+    # Hardware testing places ti_draw text two pixels beyond its calculated
+    # ink width, so inset the shared right edge by two pixels.
+    right = BOARD_X + SQUARE*8-2
+
+    if move_count == 0 or digits != len(str(move_count-1)):
+        # The complete right-aligned text shifts only at 10, 100, etc.
+        # Clear and redraw MOVES only at those digit-count boundaries.
+        text = "MOVES " + count_text
+        width = text_width(text)
+        tx = right-width
+    else:
+        # For ordinary updates, erase only the old number. The extra pixel
+        # compensates for fill_rect() excluding its far-right edge.
+        text = count_text
+        width = text_width(text)
+        tx = right-width
+
+    ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
+    fill_rect_at(tx,SCORE_Y-3,width+1,19)
+    ti_draw.set_color(0,0,0)
+    ti_draw.draw_text(tx,SCORE_Y,text)
 
 def draw_capture_column(x,captures,white_piece):
     # Highest-value pieces first; only types that were actually captured.
@@ -957,7 +985,7 @@ def reset_game_state():
     global winner, stalemate, quit_confirm, check_turn
     global promotion_pending, promotion_x, promotion_y
     global promotion_side, promotion_index
-    global white_score, black_score
+    global white_score, black_score, move_count
     global white_castle_k, white_castle_q
     global black_castle_k, black_castle_q
     global en_passant_x, en_passant_y
@@ -1000,6 +1028,7 @@ def reset_game_state():
 
     white_score = 0
     black_score = 0
+    move_count = 0
 
     white_castle_k = True
     white_castle_q = True
@@ -1017,6 +1046,7 @@ def perform_ai_move(move):
     global turn, check_turn, winner, stalemate
     global message
     global last_move
+    global move_count
 
     if move is None:
         return
@@ -1035,6 +1065,8 @@ def perform_ai_move(move):
 
     old_check_turn = check_turn
     state = make_move(y1,x1,y2,x2,ai_side,True,promotion)
+    if ai_side == 1:
+        move_count = move_count+1
 
     captured_piece = state[6]
     capture_y = state[7]
@@ -1070,6 +1102,8 @@ def perform_ai_move(move):
     if captured_piece != ".":
         draw_captures()
         draw_score()
+    if ai_side == 1:
+        draw_moves()
 
     if captured_piece == "K":
         winner = "WHITE"
@@ -1137,6 +1171,7 @@ def draw_initial_screen():
     draw_status()
     draw_captures()
     draw_score()
+    draw_moves()
 
     # Draw initial cursor last, independently from square rendering.
     draw_tile_highlight(cursor_x,cursor_y,(255,220,0))
@@ -2419,6 +2454,10 @@ while running:
             old_check_turn = check_turn
 
             # Promotion completes the current player's move.
+            if turn == 1:
+                move_count = move_count+1
+                draw_moves()
+
             if turn == 0:
                 turn = 1
             else:
@@ -2677,6 +2716,9 @@ while running:
                     draw_score()
 
                 if captured_king:
+                    if turn == 1:
+                        move_count = move_count+1
+                        draw_moves()
                     check_turn = -1
                     draw_status()
 
@@ -2698,6 +2740,10 @@ while running:
                     old_check_turn = check_turn
 
                     # Give the turn to the other player.
+                    if turn == 1:
+                        move_count = move_count+1
+                        draw_moves()
+
                     if turn == 0:
                         turn = 1
                     else:
