@@ -171,7 +171,12 @@ adding AST passes for them:
   multi-character string is possible because string-membership semantics then
   differ;
 - use container truth tests such as `if not moves` instead of
-  `if len(moves) == 0` when only emptiness matters.
+  `if len(moves) == 0` when only emptiness matters;
+- combine adjacent assignments of the same immutable value, for example
+  `white_castle_k = white_castle_q = black_castle_k = black_castle_q = True`,
+  because one chained assignment uses fewer statements and AST nodes. Do not
+  apply this to mutable values such as lists, dictionaries or sets: chained
+  assignment would make every target share the same object.
 
 These forms are both readable and structurally smaller, so future changes
 should use them directly in the source of truth. As with every optimization,
