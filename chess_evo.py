@@ -742,43 +742,29 @@ def draw_capture_column(x,captures,white_piece):
 
             row = row + 1
 
-def draw_captures():
-    # Clear the panel without touching the chessboard.
+def draw_captures(side=-1):
+    # A move changes only the capturing player's column. side=-1 is the
+    # full-panel draw used during setup/reset.
     ti_draw.set_color(UI_BG[0],UI_BG[1],UI_BG[2])
-    fill_rect_at(
-        CAPTURE_X,
-        CAPTURE_Y,
-        CAPTURE_W,
-        120
-    )
 
-    # Player headings.
-    ti_draw.set_color(0,0,180)
-    ti_draw.draw_text(
-        CAPTURE_X+3,
-        CAPTURE_Y,
-        "W"
-    )
+    if side < 0:
+        fill_rect_at(CAPTURE_X,CAPTURE_Y,CAPTURE_W,120)
 
-    ti_draw.set_color(180,0,0)
-    ti_draw.draw_text(
-        CAPTURE_X+34,
-        CAPTURE_Y,
-        "B"
-    )
+        ti_draw.set_color(0,0,180)
+        ti_draw.draw_text(CAPTURE_X+3,CAPTURE_Y,"W")
+        ti_draw.set_color(180,0,0)
+        ti_draw.draw_text(CAPTURE_X+34,CAPTURE_Y,"B")
 
-    # Two 24-pixel-ish columns.
-    draw_capture_column(
-        CAPTURE_X,
-        white_captures,
-        False
-    )
-
-    draw_capture_column(
-        CAPTURE_X+30,
-        black_captures,
-        True
-    )
+        draw_capture_column(CAPTURE_X,white_captures,False)
+        draw_capture_column(CAPTURE_X+30,black_captures,True)
+    else:
+        x = CAPTURE_X+side*30
+        fill_rect_at(x,CAPTURE_Y+22,29,98)
+        draw_capture_column(
+            x,
+            white_captures if side == 0 else black_captures,
+            side == 1
+        )
 
 def update_material_state():
     # Rebuild the material score from the pieces currently on the board.
@@ -1072,8 +1058,9 @@ def perform_ai_move(move):
             y2
         )
 
+    if captured_piece != ".":
+        draw_captures(ai_side)
     if captured_piece != "." or promotion is not None:
-        draw_captures()
         draw_score()
     if ai_side == 1:
         draw_moves()
@@ -2377,7 +2364,6 @@ while running:
                 board[promotion_y][promotion_x] = choice.upper()
 
             update_material_state()
-            draw_captures()
             draw_score()
 
             # Draw the selected promoted piece.
@@ -2653,7 +2639,7 @@ while running:
                     )
 
                 if captured_piece != ".":
-                    draw_captures()
+                    draw_captures(turn)
                     draw_score()
 
                 if captured_king:
