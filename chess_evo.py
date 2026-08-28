@@ -20,6 +20,7 @@ import ti_draw
 import ti_system
 import random
 import gc
+import time
 
 def const(value):
     # The desktop build preprocessor removes this marker and inlines the value.
@@ -306,6 +307,10 @@ human_side = 0
 ai_side = 1
 thinking = False
 debug_panel = False
+# Results from the most recently completed AI search. A negative time means
+# that no AI move has been measured yet in the current game.
+ai_think_time = -1
+ai_evaluated_moves = 0
 
 message = "SELECT PIECE"
 winner = ""
@@ -637,15 +642,41 @@ def draw_debug_panel_frame():
     draw_rect_at(0,18,LEFT_PANEL_W-1,209)
     ti_draw.set_color(0,60,170)
     ti_draw.draw_text(5,26,"DEBUG")
-    ti_draw.draw_text(5,53,"LK --")
-    ti_draw.draw_text(5,69,"FM "+str(gc.mem_free()))
+    draw_debug_metric(0,"LK --")
+    draw_debug_metric(1,"FM "+str(gc.mem_free()))
+    if player_count == 1:
+        draw_ai_debug_metrics()
+
+
+def draw_debug_metric(index,text):
+    # Each metric owns one non-overlapping 16-pixel row. Keeping both the
+    # clear and text coordinates here prevents one refresh erasing another.
+    y = 53+index*16
+    ti_draw.set_color(240,165,70)
+    fill_rect_at(4,y,91,16)
+    ti_draw.set_color(0,60,170)
+    ti_draw.draw_text(5,y,text)
+
+
+def draw_ai_debug_metrics():
+    # These rows can be refreshed after an AI turn without repainting the
+    # complete debug panel. Show tenths of a second while that fits.
+    if ai_think_time < 0:
+        draw_debug_metric(2,"AI --")
+        draw_debug_metric(3,"MV --")
+        return
+
+    tenths = int(ai_think_time*10)
+    time_text = "AI "+str(tenths//10)+"."+str(tenths%10)+"S"
+    if text_width(time_text) > LEFT_PANEL_W-10:
+        time_text = "AI "+str(int(ai_think_time))+"S"
+    move_text = "MV "+str(ai_evaluated_moves)
+    draw_debug_metric(2,time_text)
+    draw_debug_metric(3,move_text)
 
 
 def draw_debug_key(key):
-    ti_draw.set_color(240,165,70)
-    fill_rect_at(4,45,91,24)
-    ti_draw.set_color(0,60,170)
-    ti_draw.draw_text(5,53,"LK "+str(key))
+    draw_debug_metric(0,"LK "+str(key))
 
 
 def draw_game_over_popup():
@@ -994,6 +1025,7 @@ def reset_game_state():
     global en_passant_x, en_passant_y
     global white_captures, black_captures
     global thinking, debug_panel
+    global ai_think_time, ai_evaluated_moves
     global human_side, ai_side
 
     board = [
@@ -1023,6 +1055,8 @@ def reset_game_state():
     check_turn = -1
     thinking = False
     debug_panel = False
+    ai_think_time = -1
+    ai_evaluated_moves = 0
 
     promotion_pending = False
     promotion_x = -1
@@ -1995,6 +2029,10 @@ def evaluate_board():
 
 
 def minimax(depth,alpha,beta,side,ply=1):
+    global ai_evaluated_moves
+    # Every call evaluates the position reached by one simulated move. This
+    # includes terminal positions and reflects alpha-beta pruning.
+    ai_evaluated_moves += 1
     white_king = find_king(0)
     black_king = find_king(1)
     if white_king is None:
@@ -2434,8 +2472,13 @@ while running:
     if player_count == 1 and turn == ai_side:
         thinking = True
         draw_status_panel()
+        ai_evaluated_moves = 0
+        ai_think_time = time.monotonic()
         ai_move = find_best_move(AI_DEPTH,ai_side)
+        ai_think_time = time.monotonic()-ai_think_time
         thinking = False
+        if debug_panel:
+            draw_ai_debug_metrics()
         perform_ai_move(ai_move)
         continue
 
