@@ -54,12 +54,11 @@ board = [
 WHITE = const("prnbqk")
 BLACK = const("PRNBQK")
 
-if build_choice("piece_style","graphical"):
-    # Player 1 uses a white fill with a black outline; player 2 uses the
-    # reverse. A checked king uses a red fill.
-    WHITE_RGB = const((255,255,255))
-    BLACK_RGB = const((0,0,0))
-    CHECK_RGB = const((220,0,0))
+# Player 1 uses white, player 2 uses black, and a checked king uses red.
+# Graphical pieces also reverse the player colors for their outlines.
+WHITE_RGB = const((255,255,255))
+BLACK_RGB = const((0,0,0))
+CHECK_RGB = const((220,0,0))
 
 KEY_LEFT  = const(24)
 KEY_UP    = const(25)
@@ -294,11 +293,11 @@ else:
         # One character from the board representation replaces every
         # graphical silhouette. Case continues to distinguish the sides.
         if checked:
-            ti_draw.set_color(220,0,0)
+            ti_draw.set_color(CHECK_RGB[0],CHECK_RGB[1],CHECK_RGB[2])
         elif white_piece:
-            ti_draw.set_color(255,255,255)
+            ti_draw.set_color(WHITE_RGB[0],WHITE_RGB[1],WHITE_RGB[2])
         else:
-            ti_draw.set_color(0,0,0)
+            ti_draw.set_color(BLACK_RGB[0],BLACK_RGB[1],BLACK_RGB[2])
         ti_draw.draw_text(px+4,py,p)
 
 cursor_x = 4
