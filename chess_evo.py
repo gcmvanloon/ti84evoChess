@@ -693,7 +693,7 @@ if build_feature("debug_panel"):
 
 
 def draw_game_over_popup():
-    result = winner + " WON" if winner != "" else "NO ONE WON"
+    result = winner + " WINS" if winner != "" else "STALEMATE"
 
     box_w = text_width(result)+16
     box_h = 38
