@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 chess_evo_min.py
+chess_evo_min.py.tmp
+chess_evo_preprocessed.py.tmp

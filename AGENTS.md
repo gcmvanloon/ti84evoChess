@@ -12,9 +12,38 @@ These instructions capture the constraints and decisions that future agents must
 - make all calculator-code changes there;
 - never hand-edit minified code.
 
-`chess_evo_min.py` is the aggressively minified calculator test build:
+The build pipeline is deliberately ordered as:
 
-- generate it from `chess_evo.py` after every calculator-code iteration;
+```text
+chess_evo.py -> AST preprocessing -> python-minifier -> chess_evo_min.py
+```
+
+`tools/ast_preprocessor.py` reads the source first and writes a temporary
+optimized Python file. The temporary file is build output, not another source
+of truth. Add future AST optimizations as separate passes in the
+preprocessor's pass pipeline and preserve its generic input/output CLI.
+
+### Preprocessor rules
+
+`const()` marks immutable module-level literals for build-time inlining. Never
+use it for runtime state, contents that change, configurable settings or
+values whose shared object identity matters. Large composites may be
+duplicated at each dynamic read site; inspect and measure the complete pipeline
+before marking them. Only the generated build, with all markers removed, goes
+onto the calculator.
+
+Before adding or changing `const()` declarations, AST passes, preprocessing or
+minifier configuration, **read and follow `PREPROCESSOR.md`**. It contains the
+required syntax, inlining policy, architecture, metrics, tests and validation
+workflow.
+
+Do not upload `chess_evo.py` directly. The identity calls deliberately make
+the readable file more expensive to compile.
+
+`python-minifier` consumes the temporary preprocessed file and produces
+`chess_evo_min.py`, the aggressively minified calculator test build:
+
+- generate it after every calculator-code iteration;
 - generate it only through the repository build task described below;
 - treat it as disposable output, not source;
 - do not commit it; it is intentionally listed in `.gitignore`;
@@ -37,6 +66,22 @@ MemoryError: memory allocation failed, allocating 467 bytes
 The failed allocation is usually only the next allocation that could not fit.
 
 **File size alone is not a reliable measure.** A smaller file can require more parser/compiler memory.
+
+AST node count is an important desktop proxy for this compilation pressure.
+While CPython's AST is not necessarily identical to the Evo-T Python parser's
+internal representation, every statement, assignment, name, literal,
+operator, subscript and container expression generally requires parser and
+compiler bookkeeping. Much of that state exists simultaneously while the
+module is being compiled, when RAM must also hold source text, symbols and the
+emerging bytecode. A failure at this stage happens before gameplay and cannot
+be fixed by reducing later AI allocations or calling `gc.collect()` afterward.
+
+Minification can therefore make the byte file smaller while making compilation
+harder. One measured example was local argument renaming: it saved characters
+by introducing short aliases, but each alias added an assignment, names and
+load/store nodes. Preserving function argument names produced a larger file
+with substantially fewer nodes and statements, which is the preferred trade
+for this project.
 
 When memory is tight, prefer:
 
@@ -74,9 +119,10 @@ Generate the calculator build with the default VS Code build task
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1
 ```
 
-The build task creates `chess_evo_min.py` through a temporary file and
-compile-checks both readable and minified sources before replacing the output.
-It also reports the source size, output size, and percentage reduction.
+The build task creates `chess_evo_min.py` through temporary preprocessed and
+minified files and compile-checks the readable, preprocessed and minified
+sources before replacing the output. It reports preprocessing substitutions,
+folded indexed reads, AST node counts, final statement count and byte sizes.
 
 The required core minifier configuration is:
 
@@ -84,12 +130,18 @@ The required core minifier configuration is:
 hoist_literals = False
 rename_locals = True
 rename_globals = True
+preserve_locals = all_function_argument_names
 ```
 
 The CLI expresses this with `--no-hoist-literals` and `--rename-globals`.
 Local renaming is enabled by default in the pinned `python-minifier` version;
 the CLI only exposes the inverse `--no-rename-locals` switch. Keep these
 settings centralized in `tools/build_minified.ps1`.
+
+Preserving function argument names is intentional. Renaming them caused the
+minifier to insert short local alias assignments so keyword calls remain
+compatible. On this project those aliases added substantially more AST nodes
+and statements. Non-argument locals remain eligible for renaming.
 
 Literal hoisting was measured on this project and rejected: it saved some
 source bytes but added globals, statements, and AST nodes, increasing the kind

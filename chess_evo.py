@@ -21,6 +21,11 @@ import ti_system
 import random
 import gc
 
+def const(value):
+    # The desktop build preprocessor removes this marker and inlines the value.
+    # It remains an identity function so the readable source can run as-is.
+    return value
+
 # Thin pen for tile highlights.
 ti_draw.set_pen("thin","solid")
 
@@ -35,44 +40,44 @@ board = [
     ["r","n","b","q","k","b","n","r"]
 ]
 
-WHITE = "prnbqk"
-BLACK = "PRNBQK"
+WHITE = const("prnbqk")
+BLACK = const("PRNBQK")
 
 # Piece colors are shared by all six renderers. Player 1 uses a white fill
 # with a black outline; player 2 uses the reverse.
-WHITE_RGB = (255,255,255)
-BLACK_RGB = (0,0,0)
-CHECK_RGB = (220,0,0)
+WHITE_RGB = const((255,255,255))
+BLACK_RGB = const((0,0,0))
+CHECK_RGB = const((220,0,0))
 
-KEY_LEFT  = 24
-KEY_UP    = 25
-KEY_RIGHT = 26
-KEY_DOWN  = 34
-KEY_CLEAR = 45
-KEY_ENTER = 105
-KEY_TRACE = 14
+KEY_LEFT  = const(24)
+KEY_UP    = const(25)
+KEY_RIGHT = const(26)
+KEY_DOWN  = const(34)
+KEY_CLEAR = const(45)
+KEY_ENTER = const(105)
+KEY_TRACE = const(14)
 
-BOARD_X = 115
-BOARD_Y = 26
-SQUARE = 18
+BOARD_X = const(115)
+BOARD_Y = const(26)
+SQUARE = const(18)
 
 # On the current TI-84 Evo ti_draw implementation,
 # rectangle primitives appear one square (18 px) lower
 # than draw_text. Apply one central correction so
 # rectangles and text use the same logical coordinates.
-SHAPE_Y_FIX = -18
+SHAPE_Y_FIX = const(-18)
 
 # ------------------------------------------------------------
 # SCORE + CAPTURE PANEL
 # ------------------------------------------------------------
-PIECE_VALUES = {
+PIECE_VALUES = const({
     "p":1,
     "n":3,
     "b":3,
     "r":5,
     "q":9,
     "k":0
-}
+})
 
 # ------------------------------------------------------------
 # AI SETTINGS
@@ -81,27 +86,27 @@ PIECE_VALUES = {
 AI_DEPTH = 3
 AI_RANDOMNESS = 1
 AI_SCORE_MARGIN = 0
-OPENING_SAFETY_MARGIN = 30
+OPENING_SAFETY_MARGIN = const(30)
 
 # Evaluation values use centipawn-like units. They are deliberately
 # separate from the visible capture score above.
-AI_PIECE_VALUES = {
+AI_PIECE_VALUES = const({
     "p":100,
     "n":320,
     "b":330,
     "r":500,
     "q":900,
     "k":20000
-}
+})
 
-AI_MATE_SCORE = 100000
-AI_INFINITY = 1000000
+AI_MATE_SCORE = const(100000)
+AI_INFINITY = const(1000000)
 
 # Lightweight piece-square data. One shared 8x8 center table keeps
 # memory use low; piece-specific multipliers turn it into positional
 # values for knights, bishops, rooks and queens. Pawns and kings use
 # a few direct positional rules below.
-AI_CENTER_TABLE = (
+AI_CENTER_TABLE = const((
     0,0,0,0,0,0,0,0,
     0,1,1,1,1,1,1,0,
     0,1,2,2,2,2,1,0,
@@ -110,24 +115,24 @@ AI_CENTER_TABLE = (
     0,1,2,2,2,2,1,0,
     0,1,1,1,1,1,1,0,
     0,0,0,0,0,0,0,0
-)
+))
 
-AI_DEVELOPMENT_BONUS = 12
-AI_CASTLED_BONUS = 25
-AI_BISHOP_PAIR_BONUS = 20
+AI_DEVELOPMENT_BONUS = const(12)
+AI_CASTLED_BONUS = const(25)
+AI_BISHOP_PAIR_BONUS = const(20)
 
 # Right side of the 320-pixel drawing area.
-CAPTURE_X = 260
-CAPTURE_Y = 26
-CAPTURE_W = 59
-CAPTURE_ROW = 18
+CAPTURE_X = const(260)
+CAPTURE_Y = const(26)
+CAPTURE_W = const(59)
+CAPTURE_ROW = const(18)
 
 # Score and move count share the line below the board.
-SCORE_Y = 190
+SCORE_Y = const(190)
 
 # Light blue-gray for every non-board part of the game screen.
-UI_BG = (232,236,244)
-LEFT_PANEL_W = 100
+UI_BG = const((232,236,244))
+LEFT_PANEL_W = const(100)
 
 # ------------------------------------------------------------
 # SPECIALIZED CHESS PIECE DRAWING
@@ -315,8 +320,8 @@ promotion_x = -1
 promotion_y = -1
 promotion_side = -1
 promotion_index = 0
-PROMOTION_CHOICES = "qrbn"
-YES_NO_CHOICES = ("YES","NO")
+PROMOTION_CHOICES = const("qrbn")
+YES_NO_CHOICES = const(("YES","NO"))
 
 white_score = 0
 black_score = 0
