@@ -99,33 +99,24 @@ Optimize for **simple Python structure**, not only source bytes.
 ## 3. Minification rules
 
 Minification is automated with `python-minifier`, pinned in
-`requirements-dev.txt`. Python is managed by `uv`, with the requested version
-stored in `.python-version` and the project environment stored in `.venv`.
-
-One-time setup, or recovery after `.venv` is removed:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\setup_minifier.ps1
-```
-
-In VS Code, the equivalent task is **Chess: setup minifier**. It downloads the
-managed Python runtime when needed, creates `.venv`, and synchronizes the
-pinned tools. System Python and pip are not required.
+`requirements-dev.txt`. The Dev Container supplies Python 3.11 and installs
+the pinned tools into an image-owned virtual environment. Contributors need
+Docker and the VS Code Dev Containers extension, but no host Python, `uv`,
+`pip` or repository-local `.venv`. See `BUILDING.md` for initial setup.
 
 Generate the release calculator build with the default VS Code build task
 (`Ctrl+Shift+B`), named **release build**, or run:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1 -Profile release
+```bash
+bash tools/build_minified.sh --profile release
 ```
 
 The build task creates `chess_evo_min.py` through temporary preprocessed and
 minified files and compile-checks the readable, preprocessed and minified
 sources before replacing the output. It reports preprocessing substitutions,
 folded indexed reads, AST node counts, final statement count and byte sizes.
-After a successful build it also appends a row to the committed
-`BUILD_METRICS.csv` when the build inputs or metrics differ from the latest
-record. Keep this history file append-only; do not rewrite past measurements.
+The legacy PowerShell metrics-history workflow is not part of the Dev
+Container build and remains pending separate removal.
 
 The required core minifier configuration is:
 
@@ -139,7 +130,7 @@ preserve_locals = all_function_argument_names
 The CLI expresses this with `--no-hoist-literals` and `--rename-globals`.
 Local renaming is enabled by default in the pinned `python-minifier` version;
 the CLI only exposes the inverse `--no-rename-locals` switch. Keep these
-settings centralized in `tools/build_minified.ps1`.
+settings centralized in `tools/build_minified.sh`.
 
 Preserving function argument names is intentional. Renaming them caused the
 minifier to insert short local alias assignments so keyword calls remain
@@ -463,9 +454,9 @@ For every calculator-code change:
 4. keep piece graphics inside 16×16;
 5. preserve incremental redraws and highlight separation;
 6. favor fewer Python constructs and fewer graphics calls;
-7. run **Chess: setup minifier** only if `.venv` or its pinned tools are missing;
-8. run **release build** or **debug build** to regenerate and compile-check
-   `chess_evo_min.py`;
+7. reopen or rebuild the Dev Container if its pinned tools are unavailable;
+8. run **release build** or **debug build** inside the Dev Container to
+   regenerate and compile-check `chess_evo_min.py`;
 9. review the reported minified size and, when memory is tight, compare
    statement count, identifier count, and AST complexity;
 10. upload the generated `chess_evo_min.py` to the calculator and test it on the

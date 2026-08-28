@@ -303,12 +303,12 @@ profile explicitly to the build script. Each task must:
 
 Support an explicit terminal override such as:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1 -Profile debug
+```bash
+bash tools/build_minified.sh --profile debug
 ```
 
 The build script may still use `default_profile` when invoked directly without
-`-Profile`, but checked-in VS Code tasks must be explicit. An ordinary build
+`--profile`, but checked-in VS Code tasks must be explicit. An ordinary build
 must process only one profile. It is the fast, intermittent development path
 for the selected profile.
 

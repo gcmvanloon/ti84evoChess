@@ -1,0 +1,19 @@
+{
+    "name": "TI-84 Evo-T Chess",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "remoteUser": "vscode",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/opt/ti84-chess-venv/bin/python",
+                "terminal.integrated.defaultProfile.linux": "bash"
+            }
+        }
+    }
+}

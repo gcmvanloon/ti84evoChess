@@ -2,29 +2,12 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Chess: setup minifier",
-            "type": "shell",
-            "command": "powershell",
-            "args": [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\tools\\setup_minifier.ps1"
-            ],
-            "problemMatcher": []
-        },
-        {
             "label": "release build",
             "type": "shell",
-            "command": "powershell",
+            "command": "bash",
             "args": [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\tools\\build_minified.ps1",
-                "-Profile",
+                "${workspaceFolder}/tools/build_minified.sh",
+                "--profile",
                 "release"
             ],
             "group": {
@@ -36,47 +19,13 @@
         {
             "label": "debug build",
             "type": "shell",
-            "command": "powershell",
+            "command": "bash",
             "args": [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\tools\\build_minified.ps1",
-                "-Profile",
+                "${workspaceFolder}/tools/build_minified.sh",
+                "--profile",
                 "debug"
             ],
             "group": "build",
-            "problemMatcher": []
-        },
-        {
-            "label": "release metrics",
-            "type": "shell",
-            "command": "powershell",
-            "args": [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\tools\\measure_profile.ps1",
-                "-Profile",
-                "release"
-            ],
-            "problemMatcher": []
-        },
-        {
-            "label": "debug metrics",
-            "type": "shell",
-            "command": "powershell",
-            "args": [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\tools\\measure_profile.ps1",
-                "-Profile",
-                "debug"
-            ],
             "problemMatcher": []
         }
     ]

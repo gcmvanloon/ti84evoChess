@@ -404,7 +404,7 @@ add assignments, names, and load/store AST nodes. Non-argument locals and
 globals remain eligible for renaming. Literal hoisting remains disabled because
 it added globals, statements, and AST nodes in project measurements.
 
-Keep minifier settings centralized in `tools/build_minified.ps1`. Do not run an
+Keep minifier settings centralized in `tools/build_minified.sh`. Do not run an
 ad hoc configuration or manually post-process generated output.
 
 ## Commands
@@ -412,32 +412,32 @@ ad hoc configuration or manually post-process generated output.
 Run the preprocessor with arbitrary input and output paths and readable-source
 defaults:
 
-```powershell
-.\.venv\Scripts\python.exe .\tools\ast_preprocessor.py input.py output.py
+```bash
+python tools/ast_preprocessor.py input.py output.py
 ```
 
 Use the configured default profile:
 
-```powershell
-.\.venv\Scripts\python.exe .\tools\ast_preprocessor.py input.py output.py --config .\build_profiles.json
+```bash
+python tools/ast_preprocessor.py input.py output.py --config build_profiles.json
 ```
 
 Select an explicit configured profile:
 
-```powershell
-.\.venv\Scripts\python.exe .\tools\ast_preprocessor.py input.py output.py --config .\build_profiles.json --profile debug
+```bash
+python tools/ast_preprocessor.py input.py output.py --config build_profiles.json --profile debug
 ```
 
 Run the regression tests:
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tools -p "test_*.py" -v
+```bash
+python -m unittest discover -s tools -p "test_*.py" -v
 ```
 
 Run the normal default-profile build:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_minified.ps1
+```bash
+bash tools/build_minified.sh
 ```
 
 Measure one configured profile without replacing `chess_evo_min.py`:
