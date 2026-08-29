@@ -426,7 +426,47 @@ or tool changes still require calculator testing.
 
 If a build fails with `MemoryError` before gameplay starts, first suspect parser/compiler footprint rather than the AI or drawing-time allocations.
 
-## 13. Things not to casually reintroduce
+## 13. Chess-logic test suite
+
+The desktop chess-logic and AI tests live under `tests/`. Run them with the
+VS Code **Run Tests** task or:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+This suite is separate from the preprocessor and build-profile tests under
+`tools/`. Those tool tests remain manual and are required when changing the
+preprocessor, build profiles or their supporting workflow; the **Run Tests**
+task deliberately does not discover them.
+
+Whenever changing chess logic—including evaluation, minimax, difficulty
+selection, move generation, attack detection, or make/undo state—run the chess
+test suite and consider whether the change exposes a missing case. A behavior
+change or bug fix should normally include one focused regression test. A pure
+refactor needs a new test only when existing coverage does not protect the
+behavior being refactored. Do not mechanically change an expected value just
+to make a failing test pass; first establish whether the behavior change is
+intentional.
+
+Keep additions small and diagnostic:
+
+- use a minimal board position that isolates one rule or decision;
+- add `Scenario`, `Action` and `Expected` comments above each test;
+- prefer invariants and score relationships over exact complex scores or one
+  exact chosen move, so deliberate AI tuning does not create brittle tests;
+- test scores before random selection when randomness is irrelevant;
+- when selection itself is under test, mock `random.choice` at that boundary
+  instead of relying on a fixed seed;
+- exercise production functions from `chess_evo.py`; test helpers may arrange
+  positions or expose root scores, but must not duplicate the engine behavior
+  being tested;
+- for a reported bug, choose a position that fails before the fix and passes
+  after it whenever practical.
+
+Desktop tests do not replace the release build or physical Evo-T validation.
+
+## 14. Things not to casually reintroduce
 
 Avoid unless measured on the Evo-T:
 
@@ -442,7 +482,7 @@ Avoid unless measured on the Evo-T:
 - raw framebuffer assumptions;
 - unrelated AI changes.
 
-## 14. Preferred workflow
+## 15. Preferred workflow
 
 For every calculator-code change:
 

@@ -48,6 +48,14 @@ jobs:
           ./.venv/bin/python -c \
             "compile(open('chess_evo.py',encoding='utf-8').read(),'chess_evo.py','exec')"
 
+      - name: Run chess-logic tests
+        shell: bash
+        run: |
+          ./.venv/bin/python -m unittest discover \
+            -s tests \
+            -p "test_*.py" \
+            -v
+
       - name: Preprocess the release profile
         shell: bash
         run: |

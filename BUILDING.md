@@ -53,6 +53,19 @@ Without that setting, local renaming introduces short aliases for arguments to
 preserve keyword-call compatibility; those assignments save bytes but add
 significant AST/compiler pressure. Non-argument locals are still renamed.
 
+## AI tests
+
+Use **Terminal > Run Test Task** to run the dedicated **Run Tests** task. The
+equivalent terminal command is:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+These tests load the engine from `chess_evo.py` with desktop stubs for the
+calculator modules. They do not start the interactive game loop or include the
+build-tool tests under `tools/`.
+
 ## Other development commands
 
 Run the preprocessor with arbitrary input and output paths:
@@ -61,7 +74,8 @@ Run the preprocessor with arbitrary input and output paths:
 python tools/ast_preprocessor.py input.py output.py
 ```
 
-Run the desktop regression tests:
+When changing the preprocessor or build profiles, manually run their desktop
+regression tests:
 
 ```bash
 python -m unittest discover -s tools -p "test_*.py" -v

@@ -27,6 +27,26 @@
             ],
             "group": "build",
             "problemMatcher": []
+        },
+        {
+            "label": "Run Tests",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "${workspaceFolder}/tests",
+                "-p",
+                "test_*.py",
+                "-v"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": []
         }
     ]
 }
