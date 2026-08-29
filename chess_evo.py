@@ -40,17 +40,6 @@ def const(value):
 # Thin pen for tile highlights.
 ti_draw.set_pen("thin","solid")
 
-board = [
-    ["R","N","B","Q","K","B","N","R"],
-    ["P","P","P","P","P","P","P","P"],
-    [".",".",".",".",".",".",".","."],
-    [".",".",".",".",".",".",".","."],
-    [".",".",".",".",".",".",".","."],
-    [".",".",".",".",".",".",".","."],
-    ["p","p","p","p","p","p","p","p"],
-    ["r","n","b","q","k","b","n","r"]
-]
-
 WHITE = const("prnbqk")
 BLACK = const("PRNBQK")
 
@@ -115,20 +104,20 @@ AI_PIECE_VALUES = const({
 AI_MATE_SCORE = const(100000)
 AI_INFINITY = const(1000000)
 
-# Lightweight piece-square data. One shared 8x8 center table keeps
-# memory use low; piece-specific multipliers turn it into positional
-# values for knights, bishops, rooks and queens. Pawns and kings use
-# a few direct positional rules below.
-AI_CENTER_TABLE = const((
-    0,0,0,0,0,0,0,0,
-    0,1,1,1,1,1,1,0,
-    0,1,2,2,2,2,1,0,
-    0,1,2,4,4,2,1,0,
-    0,1,2,4,4,2,1,0,
-    0,1,2,2,2,2,1,0,
-    0,1,1,1,1,1,1,0,
-    0,0,0,0,0,0,0,0
-))
+# Lightweight piece-square data. Each raw byte is the positional score for
+# one square, ordered row-first. Adjacent byte literals compile as one constant,
+# saving the tuple's 64 AST elements while retaining direct integer lookup in
+# the AI evaluation hot path. The row layout keeps the values readable.
+AI_CENTER_TABLE = const(
+    b"\x00\x00\x00\x00\x00\x00\x00\x00"
+    b"\x00\x01\x01\x01\x01\x01\x01\x00"
+    b"\x00\x01\x02\x02\x02\x02\x01\x00"
+    b"\x00\x01\x02\x04\x04\x02\x01\x00"
+    b"\x00\x01\x02\x04\x04\x02\x01\x00"
+    b"\x00\x01\x02\x02\x02\x02\x01\x00"
+    b"\x00\x01\x01\x01\x01\x01\x01\x00"
+    b"\x00\x00\x00\x00\x00\x00\x00\x00"
+)
 
 AI_DEVELOPMENT_BONUS = const(12)
 AI_CASTLED_BONUS = const(25)
@@ -1028,16 +1017,18 @@ def reset_game_state():
         global ai_evaluated_moves
     global human_side, ai_side
 
-    board = [
-        ["R","N","B","Q","K","B","N","R"],
-        ["P","P","P","P","P","P","P","P"],
-        [".",".",".",".",".",".",".","."],
-        [".",".",".",".",".",".",".","."],
-        [".",".",".",".",".",".",".","."],
-        [".",".",".",".",".",".",".","."],
-        ["p","p","p","p","p","p","p","p"],
-        ["r","n","b","q","k","b","n","r"]
-    ]
+    # Each string becomes its own mutable row. The board is initialized here,
+    # immediately before gameplay, rather than duplicated at module startup.
+    board = list(map(list,(
+        "RNBQKBNR",
+        "PPPPPPPP",
+        "........",
+        "........",
+        "........",
+        "........",
+        "pppppppp",
+        "rnbqkbnr"
+    )))
 
     white_cursor = (4,6)
     black_cursor = (4,1)
