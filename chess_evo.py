@@ -1920,16 +1920,26 @@ def order_moves(moves):
         moves[j+1] = move
         i += 1
 
+def is_passed_pawn(p,y,x):
+    rows = range(y+1,8) if p == "P" else range(y-1,-1,-1)
+    enemy = "p" if p == "P" else "P"
+    for px in range(max(0,x-1),min(8,x+2)):
+        for py in rows:
+            if board[py][px] == enemy:
+                return False
+    return True
+
 def evaluate_board():
     # Positive = good for black (the AI).
     # Negative = good for white.
     #
     # Keep this deliberately cheap: one board scan calculates material,
-    # piece-square value and bishop counts. Development and king safety
-    # are then determined with only a few fixed-square checks.
+    # piece-square value, phase and bishop counts. Development and king
+    # safety are then determined with only a few fixed-square checks.
     score = 0
-    white_king = black_king = False
+    white_king = black_king = -1
     white_bishops = black_bishops = 0
+    non_pawn_material = 0
 
     for y in range(8):
         for x in range(8):
@@ -1941,9 +1951,9 @@ def evaluate_board():
             lower = p.lower()
 
             if p == "k":
-                white_king = True
+                white_king = y*8+x
             elif p == "K":
-                black_king = True
+                black_king = y*8+x
 
             if p == "b":
                 white_bishops += 1
@@ -1951,6 +1961,8 @@ def evaluate_board():
                 black_bishops += 1
 
             value = AI_PIECE_VALUES[lower]
+            if lower in "nbrq":
+                non_pawn_material += value
             center = AI_CENTER_TABLE[y*8+x]
             positional = 0
 
@@ -1976,9 +1988,10 @@ def evaluate_board():
                 if advancement > 0:
                     positional += advancement*3
 
-            elif lower == "k":
-                # Mild preference against wandering into the centre.
-                positional = -center*3
+                # Medium and Hard recognize a genuinely passed pawn. Hard
+                # values its promotion progress most strongly.
+                if AI_DEPTH > 1 and advancement > 2 and is_passed_pawn(p,y,x):
+                    positional += (advancement+1)*(4 if AI_DEPTH == 2 else 7)
 
             if is_black(p):
                 score += value + positional
@@ -1987,46 +2000,33 @@ def evaluate_board():
 
     # The current game also permits king capture, so handle that state
     # safely even though normal chess search should end at checkmate.
-    if not white_king:
+    if white_king < 0:
         return AI_MATE_SCORE
 
-    if not black_king:
+    if black_king < 0:
         return -AI_MATE_SCORE
+
+    # Preserve king safety while major material remains. With less than a
+    # queen's value left, Medium and Hard instead activate the king.
+    king_center_balance = AI_CENTER_TABLE[black_king]-AI_CENTER_TABLE[white_king]
+    if non_pawn_material < 900 and AI_DEPTH > 1:
+        score += king_center_balance*AI_DEPTH*2
+    else:
+        score -= king_center_balance*3
 
     # Development: reward knights and bishops for leaving their original
     # squares. Fixed-square checks are much cheaper than generating moves.
-    if board[7][1] != "n":
-        score -= AI_DEVELOPMENT_BONUS
-    if board[7][6] != "n":
-        score -= AI_DEVELOPMENT_BONUS
-    if board[7][2] != "b":
-        score -= AI_DEVELOPMENT_BONUS
-    if board[7][5] != "b":
-        score -= AI_DEVELOPMENT_BONUS
-
-    if board[0][1] != "N":
-        score += AI_DEVELOPMENT_BONUS
-    if board[0][6] != "N":
-        score += AI_DEVELOPMENT_BONUS
-    if board[0][2] != "B":
-        score += AI_DEVELOPMENT_BONUS
-    if board[0][5] != "B":
-        score += AI_DEVELOPMENT_BONUS
+    score += AI_DEVELOPMENT_BONUS*((board[0][1] != "N")+(board[0][6] != "N")+
+             (board[0][2] != "B")+(board[0][5] != "B")-(board[7][1] != "n")-
+             (board[7][6] != "n")-(board[7][2] != "b")-(board[7][5] != "b"))
 
     # King safety: a king on c/g after castling gets a small bonus.
-    if board[7][2] == "k" or board[7][6] == "k":
-        score -= AI_CASTLED_BONUS
-
-    if board[0][2] == "K" or board[0][6] == "K":
-        score += AI_CASTLED_BONUS
+    score += AI_CASTLED_BONUS*((board[0][2] == "K" or board[0][6] == "K")-
+                              (board[7][2] == "k" or board[7][6] == "k"))
 
     # Bishop pair is a useful positional signal and nearly free because
     # bishop counts were gathered during the normal material scan.
-    if white_bishops >= 2:
-        score -= AI_BISHOP_PAIR_BONUS
-
-    if black_bishops >= 2:
-        score += AI_BISHOP_PAIR_BONUS
+    score += AI_BISHOP_PAIR_BONUS*((black_bishops >= 2)-(white_bishops >= 2))
 
     return score
 

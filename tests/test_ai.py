@@ -91,12 +91,59 @@ class EvaluationTests(unittest.TestCase):
         original_score = chess.evaluate_board()
 
         chess.board = [
-            [piece.swapcase() for piece in row[::-1]]
+            [piece.upper() if piece in chess.WHITE else piece.lower()
+             for piece in row[::-1]]
             for row in chess.board[::-1]
         ]
 
         self.assertNotEqual(original_score, 0)
         self.assertEqual(chess.evaluate_board(), -original_score)
+
+    # Scenario: Black can place its king in the center with only kings left.
+    # Action: Compare corner and central king positions in Hard's endgame.
+    # Expected: The active central king receives the higher evaluation.
+    def test_hard_activates_the_king_in_the_endgame(self):
+        chess = load_chess_engine()
+        set_board(chess, {(0, 0): "K", (7, 7): "k"})
+        corner_score = chess.evaluate_board()
+
+        set_board(chess, {(3, 3): "K", (7, 7): "k"})
+        center_score = chess.evaluate_board()
+
+        self.assertGreater(center_score, corner_score)
+
+    # Scenario: Both queens remain while Black considers centralizing its king.
+    # Action: Compare corner and central king positions in Hard's middlegame.
+    # Expected: With major attacking material present, the center is penalized.
+    def test_hard_keeps_the_king_safer_while_queens_remain(self):
+        chess = load_chess_engine()
+        queens = {(0, 7): "Q", (7, 0): "q", (7, 7): "k"}
+        set_board(chess, {**queens, (0, 0): "K"})
+        corner_score = chess.evaluate_board()
+
+        set_board(chess, {**queens, (3, 3): "K"})
+        center_score = chess.evaluate_board()
+
+        self.assertLess(center_score, corner_score)
+
+    # Scenario: The same advanced pawn is either passed or stopped nearby.
+    # Action: Compare the score difference at all three difficulty depths.
+    # Expected: Passed-pawn awareness increases from Easy to Medium to Hard.
+    def test_passed_pawn_weight_increases_with_difficulty(self):
+        chess = load_chess_engine()
+        kings_and_pawn = {(0, 0): "K", (7, 7): "k", (4, 3): "P"}
+        differences = []
+        for depth in (1, 2, 3):
+            chess.AI_DEPTH = depth
+            set_board(chess, {**kings_and_pawn, (5, 2): "p"})
+            blocked_score = chess.evaluate_board()
+
+            set_board(chess, {**kings_and_pawn, (5, 1): "p"})
+            passed_score = chess.evaluate_board()
+            differences.append(passed_score-blocked_score)
+
+        self.assertLess(differences[0], differences[1])
+        self.assertLess(differences[1], differences[2])
 
 
 class SearchTests(unittest.TestCase):
@@ -152,6 +199,25 @@ class SearchTests(unittest.TestCase):
             medium_scores[poisoned_capture],
             max(medium_scores.values()),
         )
+
+    # Scenario: Black can move a rook next to the White king, undefended.
+    # Action: Score every Black move at Hard's full three-ply depth.
+    # Expected: Minimax sees the king capture and rejects the rook sacrifice.
+    def test_hard_search_sees_an_enemy_king_capture(self):
+        chess = load_chess_engine()
+        set_board(
+            chess,
+            {
+                (0, 0): "K",
+                (4, 4): "k",
+                (5, 7): "R",
+            },
+        )
+        sacrifice = (5, 7, 5, 5, ".")
+
+        scores = score_black_moves(chess, depth=3)
+
+        self.assertLess(scores[sacrifice], max(scores.values()))
 
     # Scenario: The standard board includes castling and en-passant state.
     # Action: Search for Black's best move while forcing deterministic selection.
@@ -231,6 +297,28 @@ class MoveGenerationTests(unittest.TestCase):
 
         self.assertNotIn((6, 4, 6, 3, "."), moves)
         self.assertIn((6, 4, 5, 4, "."), moves)
+
+    # Scenario: An undefended Black rook is adjacent to the White king.
+    # Action: Generate White's legal replies.
+    # Expected: The opposing king attacks and can capture the rook.
+    def test_king_can_capture_an_undefended_adjacent_piece(self):
+        chess = load_chess_engine()
+        set_board(chess, {(0, 0): "K", (4, 4): "k", (4, 5): "R"})
+
+        moves = {chess.unpack_move(move) for move in chess.get_legal_moves(0)}
+
+        self.assertIn((4, 4, 4, 5, "."), moves)
+
+    # Scenario: The adjacent rook is protected by the distant Black king.
+    # Action: Generate White's legal replies.
+    # Expected: White cannot capture onto a square attacked by that king.
+    def test_king_cannot_capture_a_piece_defended_by_the_enemy_king(self):
+        chess = load_chess_engine()
+        set_board(chess, {(3, 6): "K", (4, 4): "k", (4, 5): "R"})
+
+        moves = {chess.unpack_move(move) for move in chess.get_legal_moves(0)}
+
+        self.assertNotIn((4, 4, 4, 5, "."), moves)
 
 
 if __name__ == "__main__":
