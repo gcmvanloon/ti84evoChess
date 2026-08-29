@@ -2031,7 +2031,7 @@ def evaluate_board():
     return score
 
 
-def minimax(depth,alpha,beta,side,ply=1):
+def minimax(depth,alpha,beta,side,ply=1,last_target=-1):
     if build_feature("debug_panel.metrics.ai_evaluated_moves"):
         global ai_evaluated_moves
         # Every call evaluates the position reached by one simulated move.
@@ -2043,7 +2043,23 @@ def minimax(depth,alpha,beta,side,ply=1):
     if black_king is None:
         return -AI_MATE_SCORE - depth
     if depth <= 0:
-        return evaluate_board()
+        score = evaluate_board()
+        # Hard's third ply is evaluated with the opponent about to move. If
+        # that opponent's king can legally take the piece just moved, include
+        # the capture instead of valuing a rook/bishop left beyond the horizon.
+        if AI_DEPTH == 3 and ply == 3 and last_target >= 0:
+            king = white_king if side == 0 else black_king
+            y = last_target >> 3
+            x = last_target & 7
+            if abs(king[0]-y) <= 1 and abs(king[1]-x) <= 1 and \
+               not would_leave_king_in_check(side,king[0],king[1],y,x):
+                state = make_move(king[0],king[1],y,x,side,False,None,ply)
+                capture_score = evaluate_board()
+                undo_move(state)
+                if (side == 1 and capture_score > score) or \
+                   (side == 0 and capture_score < score):
+                    score = capture_score
+        return score
     moves = get_legal_moves(side)
     if not moves:
         if is_in_check(side):
@@ -2060,7 +2076,7 @@ def minimax(depth,alpha,beta,side,ply=1):
             promotion_index = move >> 12
             promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
             state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,ply)
-            value = minimax(depth-1,alpha,beta,0,ply+1)
+            value = minimax(depth-1,alpha,beta,0,ply+1,target)
             undo_move(state)
             if value > best:
                 best = value
@@ -2076,7 +2092,7 @@ def minimax(depth,alpha,beta,side,ply=1):
         promotion_index = move >> 12
         promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
         state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,ply)
-        value = minimax(depth-1,alpha,beta,1,ply+1)
+        value = minimax(depth-1,alpha,beta,1,ply+1,target)
         undo_move(state)
         if value < best:
             best = value
@@ -2171,7 +2187,7 @@ def find_best_move(depth=AI_DEPTH,side=1):
             promotion_index = move >> 12
             promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
             state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,0)
-            score = minimax(depth-1,alpha,beta,0,1)
+            score = minimax(depth-1,alpha,beta,0,1,target)
             # Easy does not search the reply, so cheaply penalize leaving the
             # moved piece where White can capture it on the next turn. Use
             # one third of its value so Easy accepts trades and modest risks.
@@ -2206,7 +2222,7 @@ def find_best_move(depth=AI_DEPTH,side=1):
         promotion_index = move >> 12
         promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
         state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,0)
-        score = minimax(depth-1,alpha,beta,1,1)
+        score = minimax(depth-1,alpha,beta,1,1,target)
         if depth == 1 and is_square_attacked(target>>3,target&7,1):
             score += AI_PIECE_VALUES[board[target>>3][target&7].lower()]//3
         undo_move(state)

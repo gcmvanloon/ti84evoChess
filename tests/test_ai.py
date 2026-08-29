@@ -42,6 +42,7 @@ def score_black_moves(chess, depth):
             chess.AI_INFINITY,
             0,
             1,
+            target,
         )
         chess.undo_move(state)
         scores[chess.unpack_move(move)] = score
@@ -218,6 +219,28 @@ class SearchTests(unittest.TestCase):
         scores = score_black_moves(chess, depth=3)
 
         self.assertLess(scores[sacrifice], max(scores.values()))
+
+    # Scenario: Hard's third ply can leave its rook beside the White king.
+    # Action: Score the root moves with the bounded king-capture extension.
+    # Expected: The move is no longer preferred beyond the depth-3 horizon.
+    def test_hard_horizon_rejects_a_delayed_enemy_king_capture(self):
+        chess = load_chess_engine()
+        set_board(
+            chess,
+            {
+                (3, 3): "K",
+                (0, 5): "k",
+                (6, 6): "R",
+                (7, 2): "B",
+                (7, 7): "p",
+                (1, 5): "p",
+            },
+        )
+        hanging_line = (6, 6, 6, 5, ".")
+
+        scores = score_black_moves(chess, depth=3)
+
+        self.assertLess(scores[hanging_line], max(scores.values()))
 
     # Scenario: The standard board includes castling and en-passant state.
     # Action: Search for Black's best move while forcing deterministic selection.
