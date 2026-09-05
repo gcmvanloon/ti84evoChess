@@ -81,6 +81,7 @@ class SelectBuildFeaturesTests(unittest.TestCase):
             "debug_panel.metrics.free_memory": ("gc.mem_free", "LK ", "import time", "ai_evaluated_moves", "draw_ai_debug_metrics"),
             "debug_panel.metrics.ai_time": ("time.monotonic", "import gc", "LK ", "ai_evaluated_moves"),
             "debug_panel.metrics.ai_evaluated_moves": ("ai_evaluated_moves", "import gc", "import time", "LK "),
+            "debug_panel.metrics.ai_candidates": ("ai_random_tries", "import gc", "import time", "LK ", "ai_evaluated_moves"),
         }
         for metric, (present, *absent) in cases.items():
             with self.subTest(metric=metric):

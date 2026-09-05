@@ -16,7 +16,8 @@
             "last_key": false,
             "free_memory": false,
             "ai_time": true,
-            "ai_evaluated_moves": true
+            "ai_evaluated_moves": true,
+            "ai_candidates": true
           }
         }
       }

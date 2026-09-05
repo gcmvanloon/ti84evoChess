@@ -30,6 +30,7 @@ DEBUG_METRICS = (
     "free_memory",
     "ai_time",
     "ai_evaluated_moves",
+    "ai_candidates",
 )
 FEATURE_NAMES = frozenset(
     BOOLEAN_FEATURES

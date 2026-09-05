@@ -195,7 +195,36 @@ A calculator-side benchmark already compared equivalent move-generation work:
 
 Only reconsider bitboards after a new Evo-T benchmark proves an improvement.
 
-## 4. Evo-T graphics constraints
+## 4. Known Evo-T runtime and API quirks
+
+Desktop Python and generic TI calculator behavior are not reliable substitutes
+for measurements on the Evo-T. Preserve these hardware-confirmed differences:
+
+- Evo-T keyed sorting with `reverse=True` does not preserve the input order of
+  items whose keys compare equal. For example, equal-scored AI moves were
+  reversed on hardware even though CPython's stable sort retained their order.
+  Sorting distinct keys worked correctly. Never make correctness, tie handling
+  or alpha-beta root selection depend on keyed-sort stability. The AI move
+  ordering decorates every move with its score and negative original index so
+  the tuple keys are unique.
+- `str.swapcase()` was unavailable on the tested Evo-T runtime and raised
+  `AttributeError`. Use explicit project-owned case logic instead. Do not assume
+  that every CPython string convenience method exists merely because basic
+  methods such as `lower()` and `upper()` work.
+- `use_buffer()` was unsupported in the tested graphics environment.
+- Shape primitives require the centralized `SHAPE_Y_FIX = -18` correction.
+  Keep this correction in wrappers such as `fill_rect_at()` and
+  `draw_rect_at()` unless the complete coordinate model is deliberately
+  redesigned and tested on hardware.
+- `fill_rect()` and `draw_rect()` do not cover identical pixel extents:
+  `fill_rect()` excludes the edges, while `draw_rect()` behaves as though the
+  edges are included. Do not normalize their dimensions without testing on
+  physical hardware.
+
+When another desktop/Evo-T discrepancy is confirmed on physical hardware, add
+it to this checklist and retain any focused calculator test used to prove it.
+
+## 5. Evo-T graphics constraints
 
 The project uses:
 
@@ -207,41 +236,6 @@ import ti_system
 No usable Evo-T Python API has been found for raw framebuffer/memcpy-style pixel blitting.
 
 Do not rely on CE-specific APIs such as `ti_image` unless verified on the Evo-T.
-
-`use_buffer()` was unsupported in the tested Evo-T environment.
-
-### Y-coordinate correction
-
-Shape primitives require the project-specific correction:
-
-```python
-SHAPE_Y_FIX = -18
-```
-
-Wrappers such as `fill_rect_at()` and `draw_rect_at()` centralize this offset. Keep the correction centralized unless the whole coordinate model is deliberately redesigned and tested on hardware.
-
-## 5. `fill_rect()` and `draw_rect()` behave differently
-
-This caused several one-pixel rendering bugs.
-
-Observed on the real Evo-T:
-
-- `draw_rect()` behaves as if the far edge is included.
-- `fill_rect()` effectively excludes the far right/bottom edge.
-
-Therefore identical width/height values do not necessarily cover identical pixels.
-
-Example: an exact 18×18 rectangle outline uses approximately:
-
-```python
-draw_rect_at(x, y, 17, 17)
-```
-
-Full fills may require an extra pixel in width/height to avoid a white seam on the right or bottom.
-
-Do not “normalize” these calls without testing on the real calculator.
-
-Close-up photos can also show RGB subpixel fringes. Judge alignment by logical pixel cells, not colored camera fringes.
 
 ## 6. Board geometry
 

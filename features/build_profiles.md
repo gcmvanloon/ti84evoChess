@@ -67,7 +67,8 @@ The intended shape is:
             "last_key": true,
             "free_memory": true,
             "ai_time": true,
-            "ai_evaluated_moves": true
+            "ai_evaluated_moves": true,
+            "ai_candidates": true
           }
         },
         "show_captures": true,
@@ -159,6 +160,7 @@ dependency framework.
 - `free_memory`
 - `ai_time`
 - `ai_evaluated_moves`
+- `ai_candidates`
 
 Turning off a metric must remove its complete cost, not just its displayed row.
 For example:
@@ -167,7 +169,9 @@ For example:
 - `ai_time` controls the `time` import, timing state, timing calls, formatting,
   and drawing;
 - `ai_evaluated_moves` controls its state, search-time increment, formatting,
-  and drawing; and
+  and drawing;
+- `ai_candidates` controls the `RT` random-candidate re-search count,
+  formatting, and drawing; and
 - `last_key` controls the key-display refresh and drawing.
 
 When every metric is false or omitted, the debug panel resolves to false and

@@ -35,6 +35,7 @@ class BuildProfileTests(unittest.TestCase):
         self.assertTrue(resolved.features["debug_panel"])
         self.assertTrue(resolved.features["debug_panel.metrics.free_memory"])
         self.assertFalse(resolved.features["debug_panel.metrics.last_key"])
+        self.assertFalse(resolved.features["debug_panel.metrics.ai_candidates"])
 
     def test_show_captures_is_an_independent_boolean(self):
         resolved = self.resolve(

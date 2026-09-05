@@ -42,7 +42,6 @@ def score_black_moves(chess, depth):
             chess.AI_INFINITY,
             0,
             1,
-            target,
         )
         chess.undo_move(state)
         scores[chess.unpack_move(move)] = score
@@ -148,6 +147,49 @@ class EvaluationTests(unittest.TestCase):
 
 
 class SearchTests(unittest.TestCase):
+    # Scenario: The initial position gives all Black pawn moves the same score.
+    # Action: Apply production ordering to those equal-scored moves.
+    # Expected: Equal-scored moves retain move-generator order on every runtime.
+    def test_move_ordering_stabilizes_equal_scores(self):
+        chess = load_chess_engine()
+        moves = [move for move in chess.get_legal_moves(1)
+                 if chess.board[(move&63)>>3][move&7] == "P"]
+        expected = moves[:]
+
+        chess.order_moves(moves, 0)
+
+        self.assertEqual(moves, expected)
+
+    # Scenario: A quiet knight can move toward the center or toward the rim.
+    # Action: Compare the production ordering scores before minimax runs.
+    # Expected: The positionally stronger central move is searched first.
+    def test_move_ordering_prefers_quiet_piece_square_improvement(self):
+        chess = load_chess_engine()
+        central = chess.pack_move(0, 6, 2, 5)
+        rim = chess.pack_move(0, 6, 2, 7)
+
+        self.assertGreater(
+            chess.move_order_score(central),
+            chess.move_order_score(rim),
+        )
+
+    # Scenario: White's two initial knight moves have equal exact Hard scores.
+    # Action: Force random selection of the second fully searched tie.
+    # Expected: Root equality search restores safe opening variety.
+    def test_hard_randomizes_a_verified_exact_root_tie(self):
+        chess = load_chess_engine()
+        chess.ai_random_tries = 0
+
+        with mock.patch.object(
+            chess.random,
+            "choice",
+            side_effect=lambda moves: moves[-1],
+        ):
+            selected = chess.find_best_move(3, 0)
+
+        self.assertEqual(selected, (7, 6, 5, 5, "."))
+        self.assertEqual(chess.ai_random_tries, 1)
+
     # Scenario: A Black rook has a clear line to an undefended White queen.
     # Action: Score every legal Black move with a full two-ply minimax window.
     # Expected: Capturing the queen is the unique highest-scoring move.
@@ -202,9 +244,9 @@ class SearchTests(unittest.TestCase):
         )
 
     # Scenario: Black can move a rook next to the White king, undefended.
-    # Action: Score every Black move at Hard's full three-ply depth.
+    # Action: Score every Black move at Medium and Hard depths.
     # Expected: Minimax sees the king capture and rejects the rook sacrifice.
-    def test_hard_search_sees_an_enemy_king_capture(self):
+    def test_search_sees_an_immediate_enemy_king_capture(self):
         chess = load_chess_engine()
         set_board(
             chess,
@@ -216,31 +258,24 @@ class SearchTests(unittest.TestCase):
         )
         sacrifice = (5, 7, 5, 5, ".")
 
-        scores = score_black_moves(chess, depth=3)
+        for depth in (2, 3):
+            with self.subTest(depth=depth):
+                chess.AI_DEPTH = depth
+                scores = score_black_moves(chess, depth=depth)
+                self.assertLess(scores[sacrifice], max(scores.values()))
 
-        self.assertLess(scores[sacrifice], max(scores.values()))
-
-    # Scenario: Hard's third ply can leave its rook beside the White king.
-    # Action: Score the root moves with the bounded king-capture extension.
-    # Expected: The move is no longer preferred beyond the depth-3 horizon.
-    def test_hard_horizon_rejects_a_delayed_enemy_king_capture(self):
+    # Scenario: A depth-limit position has an undefended rook beside a king.
+    # Action: Evaluate the leaf for either side to move at Hard's third ply.
+    # Expected: Search returns static evaluation without simulating a capture.
+    def test_depth_limit_uses_static_evaluation(self):
         chess = load_chess_engine()
-        set_board(
-            chess,
-            {
-                (3, 3): "K",
-                (0, 5): "k",
-                (6, 6): "R",
-                (7, 2): "B",
-                (7, 7): "p",
-                (1, 5): "p",
-            },
-        )
-        hanging_line = (6, 6, 6, 5, ".")
-
-        scores = score_black_moves(chess, depth=3)
-
-        self.assertLess(scores[hanging_line], max(scores.values()))
+        set_board(chess, {(0, 0): "K", (4, 4): "k", (5, 5): "R"})
+        expected = chess.evaluate_board()
+        for side in (0, 1):
+            with self.subTest(side=side), mock.patch.object(chess, "make_move") as make:
+                score = chess.minimax(0, -chess.AI_INFINITY, chess.AI_INFINITY, side, 3)
+            self.assertEqual(score, expected)
+            make.assert_not_called()
 
     # Scenario: The standard board includes castling and en-passant state.
     # Action: Search for Black's best move while forcing deterministic selection.
@@ -271,14 +306,40 @@ class SearchTests(unittest.TestCase):
         )
         self.assertEqual(after, before)
 
+    # Scenario: Evo-T keyed sorting can reverse equal stored scores.
+    # Action: Force selection of the last exactly best move in the bug position.
+    # Expected: The losing knight move is absent from Hard's verified candidates.
+    def test_hard_root_choice_does_not_depend_on_keyed_sort_stability(self):
+        chess = load_chess_engine()
+        chess.board = [list(row) for row in (
+            "R.BQ.RK.",
+            "PPPP.P.P",
+            "..N..N..",
+            "......P.",
+            "...p....",
+            "bpn.p...",
+            "p....ppp",
+            "r..qkb.r",
+        )]
+        chess.white_castle_q = False
+        chess.black_castle_k = chess.black_castle_q = False
+        chess.en_passant_x = chess.en_passant_y = -1
+        chess.update_material_state()
+        knight_blunder = (2, 2, 3, 4, ".")
+
+        with mock.patch.object(chess.random, "choice", side_effect=lambda moves: moves[-1]):
+            selected = chess.find_best_move(3, 1)
+
+        scores = score_black_moves(chess, 3)
+        self.assertGreater(scores[selected], scores[knight_blunder])
+
 
 class DifficultySelectionTests(unittest.TestCase):
-    # Scenario: Ranked moves straddle Medium's top-three and 40-point cutoffs.
+    # Scenario: Ranked moves straddle Medium's 40-point score cutoff.
     # Action: Capture the candidate list passed to the mocked random selector.
     # Expected: Cutoff ties remain eligible while moves outside the margin do not.
     def test_medium_candidate_window_honors_rank_margin_and_cutoff_ties(self):
         chess = load_chess_engine()
-        chess.AI_RANDOMNESS = 3
         chess.AI_SCORE_MARGIN = 40
         moves = [chess.pack_move(0, x, 1, x) for x in range(5)]
 
@@ -293,11 +354,71 @@ class DifficultySelectionTests(unittest.TestCase):
                 chess.choose_ranked_move(scored, True)
             return seen
 
-        tied_cutoff = list(zip(moves, (100, 90, 70, 70, 65)))
+        inside_cutoff = list(zip(moves, (100, 90, 70, 70, 65)))
         margin_cutoff = list(zip(moves, (100, 90, 50, 45, 40)))
 
-        self.assertEqual(candidates_seen(tied_cutoff), tied_cutoff[:4])
+        self.assertEqual(candidates_seen(inside_cutoff), inside_cutoff)
         self.assertEqual(candidates_seen(margin_cutoff), margin_cutoff[:2])
+
+    # Scenario: A bound-only tie fails before another equal-best move is drawn.
+    # Action: Reject the first candidate, then draw the other tie for both sides.
+    # Expected: Selection retries without fallback, counts searches, restores board.
+    def test_random_verification_retries_after_rejection(self):
+        for side in (0, 1):
+            chess = load_chess_engine()
+            chess.AI_SCORE_MARGIN = 0
+            chess.ai_random_tries = 0
+            moves = chess.get_legal_moves(side)[:3]
+            scored = [(move, 100) for move in moves]
+            before = [row[:] for row in chess.board]
+            pools = []
+
+            def draw(candidates):
+                pools.append([item[0] for item in candidates])
+                return candidates[1]
+
+            rejected_score = 90 if side else 110
+            with mock.patch.object(chess.random, "choice", side_effect=draw), \
+                 mock.patch.object(chess, "minimax", side_effect=[rejected_score, 100]) as search:
+                selected = chess.choose_ranked_move(scored, bool(side), 3, side, moves[0])
+            self.assertEqual(selected, chess.unpack_move(moves[2]))
+            self.assertEqual(pools, [moves, [moves[0], moves[2]]])
+            self.assertEqual(chess.ai_random_tries, 2)
+            self.assertEqual(search.call_count, 2)
+            self.assertEqual(chess.board, before)
+
+    # Scenario: An opening move fails opening safety but fits Medium's margin.
+    # Action: Draw it again when selection falls back to the normal pool.
+    # Expected: Its exact score is reused and only one search is counted.
+    def test_opening_fallback_reuses_verified_score(self):
+        chess = load_chess_engine()
+        chess.AI_SCORE_MARGIN = 40
+        chess.ai_random_tries = 0
+        moves = chess.get_legal_moves(1)
+        opening_move = next(move for move in moves
+                            if chess.is_opening_development_move(1, move))
+        best_move = next(move for move in moves
+                         if not chess.is_opening_development_move(1, move))
+        scored = [(best_move, 100), (opening_move, 100)]
+        with mock.patch.object(chess.random, "choice", side_effect=lambda pool: pool[-1]), \
+             mock.patch.object(chess, "minimax", return_value=65) as search:
+            selected = chess.choose_ranked_move(scored, True, 2, 1, best_move, True)
+        self.assertEqual(selected, chess.unpack_move(opening_move))
+        self.assertEqual(search.call_count, 1)
+        self.assertEqual(chess.ai_random_tries, 1)
+
+    # Scenario: The known best move is drawn immediately on Hard.
+    # Action: Choose it from a provisional pool.
+    # Expected: No extra minimax call and RT remains zero.
+    def test_known_best_needs_no_random_verification(self):
+        chess = load_chess_engine()
+        chess.ai_random_tries = 0
+        move = chess.get_legal_moves(1)[0]
+        with mock.patch.object(chess, "minimax") as search:
+            selected = chess.choose_ranked_move([(move, 100)], True, 3, 1, move)
+        self.assertEqual(selected, chess.unpack_move(move))
+        search.assert_not_called()
+        self.assertEqual(chess.ai_random_tries, 0)
 
 
 class MoveGenerationTests(unittest.TestCase):

@@ -86,7 +86,6 @@ PIECE_VALUES = const({
 # ------------------------------------------------------------
 # Defaults. One-player difficulty selection overrides these values.
 AI_DEPTH = 3
-AI_RANDOMNESS = 1
 AI_SCORE_MARGIN = 0
 OPENING_SAFETY_MARGIN = const(30)
 
@@ -315,6 +314,8 @@ if build_feature("debug_panel.metrics.ai_time"):
     ai_think_time = -1
 if build_feature("debug_panel.metrics.ai_evaluated_moves"):
     ai_evaluated_moves = -1
+if build_feature("debug_panel.metrics.ai_candidates"):
+    ai_random_tries = -1
 
 message = "SELECT PIECE"
 winner = ""
@@ -650,6 +651,9 @@ if build_feature("debug_panel"):
             else:
                 if build_feature("debug_panel.metrics.ai_evaluated_moves"):
                     draw_ai_debug_metrics(debug_row)
+                else:
+                    if build_feature("debug_panel.metrics.ai_candidates"):
+                        draw_ai_debug_metrics(debug_row)
 
 
     def draw_debug_metric(index,text):
@@ -674,6 +678,10 @@ if build_feature("debug_panel"):
         if build_feature("debug_panel.metrics.ai_evaluated_moves"):
             move_text = "MV --" if ai_evaluated_moves < 0 else "MV "+str(ai_evaluated_moves)
             draw_debug_metric(debug_row,move_text)
+            debug_row += 1
+        if build_feature("debug_panel.metrics.ai_candidates"):
+            tries_text = "RT --" if ai_random_tries < 0 else "RT "+str(ai_random_tries)
+            draw_debug_metric(debug_row,tries_text)
 
 
     if build_feature("debug_panel.metrics.last_key"):
@@ -979,18 +987,15 @@ def choose_option(selected,choices,draw_option):
 
 
 def apply_difficulty():
-    global AI_DEPTH, AI_RANDOMNESS, AI_SCORE_MARGIN
+    global AI_DEPTH, AI_SCORE_MARGIN
     if menu_select == 0:
         AI_DEPTH = 1
-        AI_RANDOMNESS = 6
         AI_SCORE_MARGIN = 150
     elif menu_select == 1:
         AI_DEPTH = 2
-        AI_RANDOMNESS = 3
         AI_SCORE_MARGIN = 40
     else:
         AI_DEPTH = 3
-        AI_RANDOMNESS = 1
         AI_SCORE_MARGIN = 0
 
 
@@ -1015,6 +1020,8 @@ def reset_game_state():
         global ai_think_time
     if build_feature("debug_panel.metrics.ai_evaluated_moves"):
         global ai_evaluated_moves
+    if build_feature("debug_panel.metrics.ai_candidates"):
+        global ai_random_tries
     global human_side, ai_side
 
     # Each string becomes its own mutable row. The board is initialized here,
@@ -1046,6 +1053,8 @@ def reset_game_state():
         ai_think_time = -1
     if build_feature("debug_panel.metrics.ai_evaluated_moves"):
         ai_evaluated_moves = -1
+    if build_feature("debug_panel.metrics.ai_candidates"):
+        ai_random_tries = -1
 
     promotion_pending = False
     promotion_x = promotion_y = promotion_side = -1
@@ -1569,6 +1578,8 @@ def would_leave_king_in_check(
 # Reused minimax state buffers. Hard mode needs at most three simultaneous
 # simulated moves (root + two recursive plies); one spare slot is kept.
 SEARCH_STATES = [[None]*14 for _ in range(4)]
+# One quiet move per ply that previously caused an alpha-beta cutoff.
+KILLER_MOVES = [-1]*4
 
 # ------------------------------------------------------------
 # MOVE ENGINE
@@ -1883,7 +1894,7 @@ def get_legal_moves(side):
     return moves
 
 
-def move_order_score(move):
+def move_order_score(move,ply=-1):
     source = move & 63
     target_sq = (move >> 6) & 63
     y1 = source >> 3
@@ -1901,24 +1912,33 @@ def move_order_score(move):
     if captured != ".":
         score += AI_PIECE_VALUES[captured.lower()]*10
         score -= AI_PIECE_VALUES[p.lower()]
+    else:
+        # Search promising quiet piece moves first using the same inexpensive
+        # positional improvement that evaluation will reward at the leaves.
+        center_gain = AI_CENTER_TABLE[target_sq]-AI_CENTER_TABLE[source]
+        if p.lower() == "n":
+            score += center_gain*6
+        elif p.lower() == "b":
+            score += center_gain*4
+        elif p.lower() in "rq":
+            score += center_gain
     if promotion:
         score += AI_PIECE_VALUES[PROMOTION_CHOICES[promotion-1]]*10
     if p.lower() == "k" and abs(x2-x1) == 2:
         score += 50
+    # Winning captures and promotions stay ahead of remembered quiet moves.
+    if ply >= 0 and move == KILLER_MOVES[ply]:
+        score += 1000
     return score
 
 
-def order_moves(moves):
-    i = 1
-    while i < len(moves):
-        move = moves[i]
-        score = move_order_score(move)
-        j = i-1
-        while j >= 0 and move_order_score(moves[j]) < score:
-            moves[j+1] = moves[j]
-            j -= 1
-        moves[j+1] = move
-        i += 1
+def order_moves(moves,ply=-1):
+    # Evo-T keyed sorting can reorder equal keys. Add the original position as
+    # a unique reverse key so equal-scored moves retain generator order.
+    moves[:] = [(move_order_score(move,ply),-i,move)
+                for i,move in enumerate(moves)]
+    moves.sort(reverse=True)
+    moves[:] = [item[2] for item in moves]
 
 def is_passed_pawn(p,y,x):
     rows = range(y+1,8) if p == "P" else range(y-1,-1,-1)
@@ -2031,7 +2051,7 @@ def evaluate_board():
     return score
 
 
-def minimax(depth,alpha,beta,side,ply=1,last_target=-1):
+def minimax(depth,alpha,beta,side,ply=1):
     if build_feature("debug_panel.metrics.ai_evaluated_moves"):
         global ai_evaluated_moves
         # Every call evaluates the position reached by one simulated move.
@@ -2043,23 +2063,7 @@ def minimax(depth,alpha,beta,side,ply=1,last_target=-1):
     if black_king is None:
         return -AI_MATE_SCORE - depth
     if depth <= 0:
-        score = evaluate_board()
-        # Hard's third ply is evaluated with the opponent about to move. If
-        # that opponent's king can legally take the piece just moved, include
-        # the capture instead of valuing a rook/bishop left beyond the horizon.
-        if AI_DEPTH == 3 and ply == 3 and last_target >= 0:
-            king = white_king if side == 0 else black_king
-            y = last_target >> 3
-            x = last_target & 7
-            if abs(king[0]-y) <= 1 and abs(king[1]-x) <= 1 and \
-               not would_leave_king_in_check(side,king[0],king[1],y,x):
-                state = make_move(king[0],king[1],y,x,side,False,None,ply)
-                capture_score = evaluate_board()
-                undo_move(state)
-                if (side == 1 and capture_score > score) or \
-                   (side == 0 and capture_score < score):
-                    score = capture_score
-        return score
+        return evaluate_board()
     moves = get_legal_moves(side)
     if not moves:
         if is_in_check(side):
@@ -2067,7 +2071,7 @@ def minimax(depth,alpha,beta,side,ply=1,last_target=-1):
                 return AI_MATE_SCORE + depth
             return -AI_MATE_SCORE - depth
         return 0
-    order_moves(moves)
+    order_moves(moves,ply)
     if side == 1:
         best = -AI_INFINITY
         for move in moves:
@@ -2076,13 +2080,15 @@ def minimax(depth,alpha,beta,side,ply=1,last_target=-1):
             promotion_index = move >> 12
             promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
             state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,ply)
-            value = minimax(depth-1,alpha,beta,0,ply+1,target)
+            value = minimax(depth-1,alpha,beta,0,ply+1)
             undo_move(state)
             if value > best:
                 best = value
             if value > alpha:
                 alpha = value
             if beta <= alpha:
+                if board[target>>3][target&7] == ".":
+                    KILLER_MOVES[ply] = move
                 break
         return best
     best = AI_INFINITY
@@ -2092,13 +2098,15 @@ def minimax(depth,alpha,beta,side,ply=1,last_target=-1):
         promotion_index = move >> 12
         promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
         state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,ply)
-        value = minimax(depth-1,alpha,beta,1,ply+1,target)
+        value = minimax(depth-1,alpha,beta,1,ply+1)
         undo_move(state)
         if value < best:
             best = value
         if value < beta:
             beta = value
         if beta <= alpha:
+            if board[target>>3][target&7] == ".":
+                KILLER_MOVES[ply] = move
             break
     return best
 
@@ -2140,44 +2148,56 @@ def is_opening_development_move(side,move):
             (y1 == 7 and x1 == 6 and y2 == 5 and x2 == 5))
 
 
-def choose_ranked_move(scored,maximizing):
-    # Randomize within both the top-N window and the difficulty's score
-    # margin. Exact ties at the window edge remain eligible.
-    limit = AI_RANDOMNESS
-    if limit > len(scored):
-        limit = len(scored)
-
-    cutoff = scored[limit-1][1]
-    if maximizing:
-        margin_cutoff = scored[0][1]-AI_SCORE_MARGIN
-        if margin_cutoff > cutoff:
-            cutoff = margin_cutoff
-    else:
-        margin_cutoff = scored[0][1]+AI_SCORE_MARGIN
-        if margin_cutoff < cutoff:
-            cutoff = margin_cutoff
-    candidates = []
-
-    for item in scored:
-        if maximizing:
-            if item[1] < cutoff:
-                break
-        else:
-            if item[1] > cutoff:
-                break
-
-        candidates.append(item)
-
-    return unpack_move(random.choice(candidates)[0])
+def choose_ranked_move(scored,maximizing,depth=1,side=1,best_move=None,opening=False):
+    if build_feature("debug_panel.metrics.ai_candidates"):
+        global ai_random_tries
+    best_score = scored[0][1]
+    exact_moves = [best_move]
+    # Opening developments retain priority and their narrower safety margin.
+    # If none survives verification, fall back to the normal difficulty pool.
+    for opening_pool in (True,False):
+        if opening_pool and not opening:
+            continue
+        margin = OPENING_SAFETY_MARGIN if opening_pool else AI_SCORE_MARGIN
+        cutoff = best_score-margin if maximizing else best_score+margin
+        candidates = [
+            item for item in scored
+            if (item[1] >= cutoff if maximizing else item[1] <= cutoff) and
+               (not opening_pool or is_opening_development_move(side,item[0]))
+        ]
+        while candidates:
+            item = random.choice(candidates)
+            move,score = item
+            if depth > 1 and move not in exact_moves:
+                source = move & 63
+                target = (move >> 6) & 63
+                promotion_index = move >> 12
+                promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
+                state = make_move(source>>3,source&7,target>>3,target&7,
+                                  side,False,promotion,0)
+                if build_feature("debug_panel.metrics.ai_candidates"):
+                    ai_random_tries += 1
+                score = minimax(depth-1,-AI_INFINITY,AI_INFINITY,1-side,1)
+                undo_move(state)
+                exact_moves.append(move)
+                scored[scored.index(item)] = (move,score)
+            if score >= cutoff if maximizing else score <= cutoff:
+                return unpack_move(move)
+            # Retry uniformly without replacement; never immediately fall back
+            # to the known best move after a rejected random candidate.
+            candidates.remove(item)
 
 
 def find_best_move(depth=AI_DEPTH,side=1):
     moves = get_legal_moves(side)
     if not moves:
         return None
+    for i in range(4):
+        KILLER_MOVES[i] = -1
     order_moves(moves)
     opening = opening_development_active(side)
     scored = []
+    best_move = moves[0]
     if side == 1:
         best_score = alpha = -AI_INFINITY
         beta = AI_INFINITY
@@ -2187,7 +2207,7 @@ def find_best_move(depth=AI_DEPTH,side=1):
             promotion_index = move >> 12
             promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
             state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,0)
-            score = minimax(depth-1,alpha,beta,0,1,target)
+            score = minimax(depth-1,alpha,beta,0,1)
             # Easy does not search the reply, so cheaply penalize leaving the
             # moved piece where White can capture it on the next turn. Use
             # one third of its value so Easy accepts trades and modest risks.
@@ -2197,22 +2217,12 @@ def find_best_move(depth=AI_DEPTH,side=1):
             scored.append((move,score))
             if score > best_score:
                 best_score = score
+                best_move = move
             if score > alpha:
                 alpha = score
         scored.sort(key=lambda item:item[1], reverse=True)
-        if opening:
-            # All normal opening moves that minimax considers safe are given
-            # the same root rank. This removes the built-in +24 preference of
-            # Nc6/Nf6 over d5/e5 without modifying the general evaluation.
-            opening_scored = [
-                (item[0],best_score)
-                for item in scored
-                if is_opening_development_move(side,item[0]) and
-                   item[1] >= best_score-OPENING_SAFETY_MARGIN
-            ]
-            if opening_scored:
-                return choose_ranked_move(opening_scored,True)
-        return choose_ranked_move(scored,True)
+        return choose_ranked_move(scored,True,depth,side,best_move,
+                                  opening and AI_DEPTH < 3)
     best_score = AI_INFINITY
     alpha = -AI_INFINITY
     beta = AI_INFINITY
@@ -2222,26 +2232,20 @@ def find_best_move(depth=AI_DEPTH,side=1):
         promotion_index = move >> 12
         promotion = PROMOTION_CHOICES[promotion_index-1] if promotion_index else None
         state = make_move(source>>3,source&7,target>>3,target&7,side,False,promotion,0)
-        score = minimax(depth-1,alpha,beta,1,1,target)
+        score = minimax(depth-1,alpha,beta,1,1)
         if depth == 1 and is_square_attacked(target>>3,target&7,1):
             score += AI_PIECE_VALUES[board[target>>3][target&7].lower()]//3
         undo_move(state)
         scored.append((move,score))
         if score < best_score:
             best_score = score
+            best_move = move
         if score < beta:
             beta = score
     scored.sort(key=lambda item:item[1])
-    if opening:
-        opening_scored = [
-            (item[0],best_score)
-            for item in scored
-            if is_opening_development_move(side,item[0]) and
-               item[1] <= best_score+OPENING_SAFETY_MARGIN
-        ]
-        if opening_scored:
-            return choose_ranked_move(opening_scored,False)
-    return choose_ranked_move(scored,False)
+    return choose_ranked_move(scored,False,depth,side,best_move,
+                              opening and AI_DEPTH < 3)
+
 
 def has_legal_move(side):
     # Used to determine both checkmate and stalemate.
@@ -2450,6 +2454,8 @@ while running:
         draw_status_panel()
         if build_feature("debug_panel.metrics.ai_evaluated_moves"):
             ai_evaluated_moves = 0
+        if build_feature("debug_panel.metrics.ai_candidates"):
+            ai_random_tries = 0
         if build_feature("debug_panel.metrics.ai_time"):
             ai_think_time = time.monotonic()
         ai_move = find_best_move(AI_DEPTH,ai_side)
@@ -2468,6 +2474,9 @@ while running:
                 else:
                     if build_feature("debug_panel.metrics.ai_evaluated_moves"):
                         draw_ai_debug_metrics(debug_row)
+                    else:
+                        if build_feature("debug_panel.metrics.ai_candidates"):
+                            draw_ai_debug_metrics(debug_row)
         perform_ai_move(ai_move)
         continue
 
